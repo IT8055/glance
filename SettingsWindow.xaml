@@ -1,0 +1,168 @@
+<Window x:Class="Glance.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Glance settings"
+        Width="780" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" ThemeMode="Dark"
+        FontFamily="Segoe UI" FontSize="13">
+
+    <Window.Resources>
+        <Style x:Key="Heading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Opacity" Value="0.85"/>
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Opacity" Value="0.62"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <!-- One labelled setting: label on the left, control on the right. -->
+        <Style x:Key="Field" TargetType="Grid">
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28,22,28,22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="36"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: how the widget looks and behaves -->
+        <StackPanel Grid.Column="0">
+            <TextBlock Text="Widget" Style="{StaticResource Heading}"/>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Shortcut" Style="{StaticResource FieldLabel}"/>
+                <Button x:Name="HotkeyButton" Grid.Column="1" HorizontalAlignment="Stretch" Click="OnRecordHotkey"
+                        ToolTip="Click, then press the keys you want to use"/>
+            </Grid>
+            <TextBlock x:Name="HotkeyHint" Style="{StaticResource Hint}" Margin="110,-4,0,10"
+                       Text="Shows and hides the widget from anywhere. Click to change it."/>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Position" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="PositionBox" Grid.Column="1" DisplayMemberPath="Name" SelectedValuePath="Value"
+                          SelectionChanged="OnChanged"/>
+            </Grid>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Columns" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="ColumnsBox" Grid.Column="1" SelectionChanged="OnChanged">
+                    <ComboBoxItem Content="1, tall and narrow"/>
+                    <ComboBoxItem Content="2"/>
+                    <ComboBoxItem Content="3"/>
+                    <ComboBoxItem Content="4, short and wide"/>
+                </ComboBox>
+            </Grid>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Size" Style="{StaticResource FieldLabel}"/>
+                <Slider x:Name="SizeSlider" Grid.Column="1" Minimum="70" Maximum="160" TickFrequency="5" IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center" ValueChanged="OnChanged"/>
+                <TextBlock x:Name="SizeValue" Grid.Column="2" Style="{StaticResource FieldLabel}" HorizontalAlignment="Right"/>
+            </Grid>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Opacity" Style="{StaticResource FieldLabel}" ToolTip="Lower values let more of what is behind the widget show through"/>
+                <Slider x:Name="OpacitySlider" Grid.Column="1" Minimum="20" Maximum="100" TickFrequency="2" IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center" ValueChanged="OnChanged"/>
+                <TextBlock x:Name="OpacityValue" Grid.Column="2" Style="{StaticResource FieldLabel}" HorizontalAlignment="Right"/>
+            </Grid>
+
+            <CheckBox x:Name="StartWithWindows" Content="Start Glance with Windows" Margin="0,4,0,2" Click="OnChanged"/>
+            <CheckBox x:Name="StartVisible" Content="Show the widget as soon as Glance starts" Margin="0,2" Click="OnChanged"/>
+            <CheckBox x:Name="ClickThrough" Content="Let clicks pass through the widget" Margin="0,2,0,0" Click="OnChanged"
+                      ToolTip="The widget can then only be changed from its icon near the clock"/>
+
+            <TextBlock Text="Updates" Style="{StaticResource Heading}" Margin="0,22,0,12"/>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Hardware" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="HardwareRate" Grid.Column="1" DisplayMemberPath="Name" SelectedValuePath="Value" SelectionChanged="OnChanged"/>
+            </Grid>
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Claude usage" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="ClaudeRate" Grid.Column="1" DisplayMemberPath="Name" SelectedValuePath="Value" SelectionChanged="OnChanged"/>
+            </Grid>
+            <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10"
+                       Text="Nothing is measured while the widget is hidden. Everything refreshes the moment you show it."/>
+
+            <CheckBox x:Name="UseExternalSensors" Content="Add readings from HWiNFO or MSI Afterburner" Click="OnChanged"/>
+            <TextBlock x:Name="SensorStatus" Style="{StaticResource Hint}" Margin="28,2,0,0"/>
+        </StackPanel>
+
+        <!-- Right: what the widget shows -->
+        <StackPanel Grid.Column="2">
+            <TextBlock Text="Sections" Style="{StaticResource Heading}"/>
+            <UniformGrid Columns="2">
+                <CheckBox x:Name="ShowClaude" Content="Claude usage" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowFps" Content="FPS" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowGpu" Content="GPU" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowCpu" Content="CPU" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowMemory" Content="Memory" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowDisk" Content="Disk activity" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowDrives" Content="Drive space" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowNetwork" Content="Network" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowWeather" Content="Weather" Margin="0,2" Click="OnChanged"/>
+                <CheckBox x:Name="ShowSpecs" Content="PC specs" Margin="0,2" Click="OnChanged"/>
+            </UniformGrid>
+
+            <StackPanel x:Name="TracePermission" Margin="0,12,0,0" Visibility="Collapsed">
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="FPS needs Windows permission to read frame events. Granting it adds your account to the Performance Log Users group. Windows will ask for an administrator's approval, and you need to sign out and back in afterwards."/>
+                <Button x:Name="GrantButton" Content="Allow the FPS counter…" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnGrantPermission"/>
+                <TextBlock x:Name="GrantStatus" Style="{StaticResource Hint}" Margin="0,6,0,0"/>
+            </StackPanel>
+            <TextBlock x:Name="NetworkHint" Style="{StaticResource Hint}" Margin="0,12,0,0" Visibility="Collapsed"
+                       Text="Network shows web and local traffic separately only when Glance is run as administrator. Otherwise it shows total download and upload."/>
+
+            <TextBlock Text="Weather" Style="{StaticResource Heading}" Margin="0,22,0,12"/>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Town" Style="{StaticResource FieldLabel}"/>
+                <TextBox x:Name="PlaceBox" Grid.Column="1" KeyDown="OnPlaceKeyDown"/>
+                <Button x:Name="FindButton" Grid.Column="2" Content="Find" Margin="8,0,0,0" Click="OnFindPlace"/>
+            </Grid>
+            <ComboBox x:Name="PlaceResults" Margin="70,0,0,10" DisplayMemberPath="Name" Visibility="Collapsed"
+                      SelectionChanged="OnPlaceChosen"/>
+            <TextBlock x:Name="PlaceStatus" Style="{StaticResource Hint}" Margin="70,-4,0,10"/>
+
+            <Grid Style="{StaticResource Field}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Units" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="UnitsBox" Grid.Column="1" SelectionChanged="OnChanged">
+                    <ComboBoxItem Content="°C and km/h"/>
+                    <ComboBoxItem Content="°C and mph"/>
+                    <ComboBoxItem Content="°F and mph"/>
+                </ComboBox>
+            </Grid>
+            <TextBlock Style="{StaticResource Hint}"
+                       Text="Weather comes from Open-Meteo. Only the town's rough coordinates are sent, and only once you have picked one."/>
+        </StackPanel>
+
+        <DockPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,24,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Content="Close" MinWidth="96" IsCancel="True" Click="OnClose"/>
+            <Button DockPanel.Dock="Left" Content="Open settings file" Click="OnOpenFile"
+                    ToolTip="For the few options that have no control here. Restart Glance after editing it."/>
+        </DockPanel>
+    </Grid>
+</Window>

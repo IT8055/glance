@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Editor and tooling
+.vs/
+.vscode/
+*.user
+*.suo
+.claude/settings.local.json
+
+# Local settings and secrets (none are needed to build, listed so they can never be committed by accident)
+.env
+.env.*
+config.local.*
+
+# OS cruft and logs
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log

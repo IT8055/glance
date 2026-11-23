@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms is only used for the tray icon and its menu. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Glance</AssemblyName>
+    <RootNamespace>Glance</RootNamespace>
+    <Version>0.2.0</Version>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- DPI awareness is declared in app.manifest, which is the WPF way. The WinForms analyzer prefers its own API. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <!-- The settings window uses the built-in Windows 11 theme (ThemeMode), which .NET still flags as experimental. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Keep WinForms and GDI types out of the global namespace so they do not clash with WPF. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <!-- The WPF SDK leaves these out of the implicit usings. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+</Project>
