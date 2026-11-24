@@ -22,6 +22,8 @@ Each block is a section. Profiles decide which sections appear and in what order
 | Drive space | Free space per fixed drive | Windows |
 | Network | Download and upload, and how much of each is web (internet) and how much LAN (your local network) | Windows counters and socket events |
 | Network by app | The five programs sending and receiving the most, with the speed each way averaged over 5 seconds | Windows socket events |
+| Web by app | The same, counting only traffic with the internet | Windows socket events |
+| LAN by app | The same, counting only traffic with your local network | Windows socket events |
 | Ping | Latency, average, jitter and packet loss to a host you choose | One ping per refresh |
 | Extra sensors | Any readings you pick from HWiNFO or MSI Afterburner: fans, voltages, drive temperatures | That tool's shared readings |
 | Battery | Charge, power source, time left. Only on PCs that have one. | Windows |
@@ -118,7 +120,7 @@ Glance records every frame time of the app in front, and once a second every har
 
 ## Settings
 
-Everything in the settings window applies immediately. The tabs are Widget (colours, position, columns, size, opacity, graphs, OLED mode), Shortcuts (the four shortcuts and starting with Windows), Sections (profiles, which sections, their order), Tray and strip, and Data (update rates, monitoring tools, extra sensors, power figures, ping host, weather town).
+Everything in the settings window applies immediately. The tabs are Widget (colours, position, columns, size, opacity, graphs, OLED mode), Shortcuts (the four shortcuts and starting with Windows), Sections (profiles, which sections, their order), Tray and strip, Data (update rates, monitoring tools, extra sensors, power figures, ping host, weather town), and About (the version, who made it, and a check for updates).
 
 Settings are kept in `%APPDATA%\Glance\config.json`. Two options only exist there: `claude.show` (which limits to list, in order, with `*` wildcards, for example `["session", "weekly_fable"]`) and `claude.labels` (rename a limit, for example `{ "weekly_all": "This week" }`). Restart Glance after editing the file by hand.
 
@@ -127,7 +129,7 @@ Settings are kept in `%APPDATA%\Glance\config.json`. Two options only exist ther
 Most sections work for any user on any PC. A few depend on the machine:
 
 - **FPS** needs permission to read Windows performance events: an administrator, or an account in the Performance Log Users group. If the account lacks it, the FPS section says so and Settings offers a button that adds the account to that group (Windows asks for approval, then sign out and back in).
-- **Web and LAN split, and Network by app** need the same permission as FPS, and nothing more: they do not need Glance to be run as administrator. Without the permission the Network section shows total download and upload. Three things to know about these figures:
+- **Web and LAN split, and the Network, Web and LAN by app panels** need the same permission as FPS, and nothing more: they do not need Glance to be run as administrator. Without the permission the Network section shows total download and upload. Three things to know about these figures:
   - They count what programs send and receive through their own connections. Traffic that Windows carries itself, of which file sharing between PCs is the main example, appears in the totals but not in the split or against a program.
   - A connection that was already open when the section started does not say where it leads, so its traffic is put down as web or LAN according to where most of that program's connections go.
   - Traffic between programs on this PC itself is left out.
@@ -144,6 +146,7 @@ Most sections work for any user on any PC. A few depend on the machine:
 
 - **Claude usage:** Glance reads the access token Claude Code keeps in `%USERPROFILE%\.claude\.credentials.json` and asks `https://api.anthropic.com/api/oauth/usage` for the figures that `/usage` shows. The token is read fresh for each request, sent only to api.anthropic.com, and never stored, logged or renewed by Glance. If it has expired the widget says so, and any Claude Code activity renews it. That endpoint is not documented by Anthropic and could change. The last response is saved to `%APPDATA%\Glance\last-usage.json` (usage numbers only) for troubleshooting.
 - **Weather:** nothing is sent until you pick a town. After that, only that town's coordinates, rounded to about a kilometre, go to open-meteo.com.
+- **Updates:** the Check for updates button on the About tab asks GitHub for the newest release of Glance. It only runs when pressed, sends nothing about you or your PC, and downloads nothing: if there is a newer version it offers to open the download page.
 - **Ping:** off until you add the section. It then pings the host you chose while the section is showing.
 - **Everything else** is read locally and goes nowhere.
 

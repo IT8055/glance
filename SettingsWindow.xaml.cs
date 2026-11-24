@@ -57,6 +57,13 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         VersionText.Text = "Glance " + App.Version;
+        AboutVersion.Text = "Version " + App.Version;
+        AboutAuthor.Text = About.Author;
+        ShowLink(AboutWebPage, About.WebPage, About.WebPage.Replace("https://", ""));
+        ShowLink(AboutRepository, About.Repository, About.Repository.Replace("https://", ""));
+        ShowLink(AboutIssues, About.Issues, null);
+        if (About.Email.Length > 0) ShowLink(AboutEmail, "mailto:" + About.Email, About.Email);
+        else AboutContact.Visibility = Visibility.Collapsed;
         PositionBox.ItemsSource = Anchors.All.Select(a => new { a.Name, a.Value }).ToList();
         HardwareRate.ItemsSource = new List<Choice>
         {
@@ -757,6 +764,60 @@ public partial class SettingsWindow : Window
     }
 
     private void OnOpenBenchmarks(object sender, RoutedEventArgs e) => _host.OpenBenchmarksFolder();
+
+    // ---- About ----
+
+    /// <summary>Which tab is About, for opening the window at it.</summary>
+    public const int AboutTab = 5;
+
+    private string? _updatePage;
+
+    private static void ShowLink(System.Windows.Documents.Hyperlink link, string address, string? text)
+    {
+        link.NavigateUri = new Uri(address);
+        if (text is null) return;
+        link.Inlines.Clear();
+        link.Inlines.Add(text);
+    }
+
+    private async void OnCheckForUpdates(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        UpdateGet.Visibility = Visibility.Collapsed;
+        UpdateStatus.Text = "Checking…";
+
+        var result = await UpdateCheck.RunAsync(App.FullVersion);
+        _updatePage = result.Page;
+        UpdateStatus.Text = result.Message;
+        UpdateGet.Visibility = result.Page is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateButton.IsEnabled = true;
+    }
+
+    private void OnVisitWebPage(object sender, RoutedEventArgs e) => OpenAddress(About.WebPage);
+
+    private void OnGetUpdate(object sender, RoutedEventArgs e)
+    {
+        if (_updatePage is { } page) OpenAddress(page);
+    }
+
+    private void OnFollowLink(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        OpenAddress(e.Uri.AbsoluteUri);
+        e.Handled = true;
+    }
+
+    private static void OpenAddress(string address)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(address) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            // No browser or mail program is set up to open it.
+            Log.Write($"Could not open {address}: {ex.Message}");
+        }
+    }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

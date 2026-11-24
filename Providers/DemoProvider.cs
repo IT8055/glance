@@ -164,6 +164,11 @@ public sealed class DemoProvider(string id, string title, int reservedRows, Func
         new DemoProvider("netapps", "Network by app", 5, t => Apps(
             ("game-launcher", $"↓ {Mbps(Between(t, 50, 55, 86))}  ↑ {Mbps(0.9)}"), ("media-server", $"↓ {Mbps(0.3)}  ↑ {Mbps(Between(t, 53, 18, 27))}"),
             ("browser", $"↓ {Mbps(Between(t, 54, 2.2, 4.6))}  ↑ {Mbps(0.4)}"), ("chat", "↓ 96 kbps  ↑ 88 kbps"), ("cloud-sync", "↓ 12 kbps  ↑ 2.1 Mbps"))),
+        new DemoProvider("webapps", "Web by app", 5, t => Apps(
+            ("game-launcher", $"↓ {Mbps(Between(t, 50, 55, 86))}  ↑ {Mbps(0.9)}"), ("browser", $"↓ {Mbps(Between(t, 54, 2.2, 4.6))}  ↑ {Mbps(0.4)}"),
+            ("cloud-sync", "↓ 12 kbps  ↑ 2.1 Mbps"), ("chat", "↓ 96 kbps  ↑ 88 kbps"), ("mail", "↓ 14 kbps  ↑ 3 kbps"))),
+        new DemoProvider("lanapps", "LAN by app", 5, t => Apps(
+            ("media-server", $"↓ {Mbps(0.3)}  ↑ {Mbps(Between(t, 53, 18, 27))}"), ("backup", "↓ 41 kbps  ↑ 1.8 Mbps"), ("remote-desktop", "↓ 182 kbps  ↑ 72 kbps"))),
         new DemoProvider("ping", "Ping", 0, t =>
         {
             var ms = Between(t, 60, 11, 17);

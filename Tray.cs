@@ -43,6 +43,7 @@ internal sealed class Tray : IDisposable
     public event Action<bool>? ClickThroughChanged;
     public event Action? BenchmarksFolderRequested;
     public event Action? SettingsRequested;
+    public event Action? AboutRequested;
     public event Action? ExitRequested;
 
     /// <param name="visible">False to leave the icon out of the tray, for runs that only take a picture.</param>
@@ -76,6 +77,7 @@ internal sealed class Tray : IDisposable
             new WF.ToolStripSeparator(),
             new WF.ToolStripMenuItem("Open benchmarks folder", null, (_, _) => BenchmarksFolderRequested?.Invoke()),
             new WF.ToolStripMenuItem("Settings…", null, (_, _) => SettingsRequested?.Invoke()),
+            new WF.ToolStripMenuItem("About Glance…", null, (_, _) => AboutRequested?.Invoke()),
             new WF.ToolStripSeparator(),
             new WF.ToolStripMenuItem("Exit", null, (_, _) => ExitRequested?.Invoke()),
         ]);

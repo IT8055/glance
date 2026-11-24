@@ -39,8 +39,8 @@ public partial class App : Application, ISettingsHost
     private string? _profileBeforeGame;
     private int _seconds;
 
-    public static string Version { get; } =
-        Assembly.GetExecutingAssembly().GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "";
+    public static Version FullVersion { get; } = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+    public static string Version { get; } = FullVersion.ToString(3);
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -150,6 +150,11 @@ public partial class App : Application, ISettingsHost
         };
         _tray.BenchmarksFolderRequested += OpenBenchmarksFolder;
         _tray.SettingsRequested += OpenSettings;
+        _tray.AboutRequested += () =>
+        {
+            OpenSettings();
+            _settings?.SelectTab(SettingsWindow.AboutTab);
+        };
         _tray.ExitRequested += Shutdown;
         _tray.Update(_config, recording: false);
 

@@ -64,7 +64,7 @@ The top five programs for processor, memory, graphics card, disk and network. Pa
 
 ### Who's using my internet, and what's this costing me?
 
-Traffic split into web and local network, and by program, without running as administrator. Power draw in watts for the CPU and graphics card, an estimate for the whole PC, and what it costs an hour to run.
+Traffic split into web and local network, and the top five programs for either one or both, without running as administrator. Power draw in watts for the CPU and graphics card, an estimate for the whole PC, and what it costs an hour to run.
 
 </td>
 <td width="50%"><img src="docs/images/network-power.png" alt="Network and power panels with graphs."></td>
@@ -92,7 +92,14 @@ There's also memory, drives, ping, battery, weather, your PC's specs, and any se
 
 ## Get it
 
-You need Windows 10 or 11 (64-bit) and the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). Then:
+<p><a href="https://github.com/IT8055/widget/releases/latest/download/Glance.exe"><img src="https://img.shields.io/badge/Download-Glance.exe-6fb1ff?style=for-the-badge" alt="Download Glance.exe"></a> <a href="https://walker-jones.eu"><img src="https://img.shields.io/badge/Web%20page-walker--jones.eu-f2b04a?style=for-the-badge" alt="Web page: walker-jones.eu"></a></p>
+
+One file of about 66 MB for 64-bit Windows 10 and 11, with nothing to install. Put it anywhere and run it. It isn't signed, so Windows asks once: choose **More info**, then **Run anyway**. Settings, About has a button that checks for newer versions.
+
+<details>
+<summary><b>Or build it yourself</b></summary>
+
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). This makes the same program as the download, in `dist\share`:
 
 ```powershell
 git clone https://github.com/IT8055/widget.git
@@ -101,12 +108,12 @@ powershell -ExecutionPolicy Bypass -File .\publish.ps1
 .\dist\share\Glance.exe
 ```
 
-That makes one file, `dist\share\Glance.exe`, that runs on any 64-bit Windows 10 or 11 PC with nothing installed. Copy it wherever you like, or hand it to a friend. It isn't signed, so Windows asks once: choose **More info**, then **Run anyway**.
+</details>
 
-Curious first? This shows the overlay with made-up numbers and touches nothing on your PC:
+Curious first? Run it like this to see the overlay with made-up numbers, touching nothing on your PC:
 
 ```powershell
-.\dist\share\Glance.exe --demo --show
+.\Glance.exe --demo --show
 ```
 
 | Press | To |
@@ -120,13 +127,14 @@ Change any of them in Settings (the gear on the overlay).
 
 ## Private by design
 
-There's no account, no telemetry, and nothing phones home. Glance goes online for three things only, all of them yours to turn off:
+There's no account, no telemetry, and nothing phones home. Glance goes online for four things only, and every one of them is up to you:
 
 | What | Goes to | When |
 | --- | --- | --- |
 | Claude usage | api.anthropic.com | If Claude Code is signed in and you use the Claude panel or alerts. The sign-in is read fresh each time and never stored, logged or sent anywhere else. |
 | Weather | open-meteo.com | Only after you pick a town. Rough coordinates, nothing more. |
 | Ping | the host you choose | Only while the ping panel is showing. |
+| Update check | api.github.com | Only when you press **Check for updates** on the About tab. It asks for the newest version number and sends nothing about you or your PC. |
 
 While the overlay is hidden, nothing is measured except what your tray icon and alerts need.
 
@@ -142,6 +150,8 @@ While the overlay is hidden, nothing is measured except what your tray icon and 
 
 - **[The guide](docs/guide.md):** every panel, every setting, and exactly where each number comes from.
 - **[For developers](docs/development.md):** how it works, and how to add a panel of your own in about 20 lines.
+
+Made by [Gary Walker-Jones](https://walker-jones.eu). Say hello at [dev@walker-jones.eu](mailto:dev@walker-jones.eu).
 
 ---
 

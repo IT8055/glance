@@ -317,6 +317,63 @@
                                Text="Nothing is measured while the widget is hidden, apart from what the tray icon and alerts need. Weather comes from Open-Meteo: only the town's rough coordinates are sent."/>
                 </StackPanel>
             </TabItem>
+
+            <!-- Who made it, and whether there is a newer one -->
+            <TabItem Header="About">
+                <StackPanel Style="{StaticResource Page}">
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,22">
+                        <!-- The icon: three bars on a dark tile. -->
+                        <Border Width="64" Height="64" CornerRadius="14" Background="#16181D" BorderBrush="#33373F" BorderThickness="1">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left" Margin="13,0,0,0">
+                                <Border Width="36" Height="8" CornerRadius="4" Background="#6FB1FF" HorizontalAlignment="Left"/>
+                                <Border Width="25" Height="8" CornerRadius="4" Background="#F2B04A" HorizontalAlignment="Left" Margin="0,6"/>
+                                <Border Width="14" Height="8" CornerRadius="4" Background="#F0616D" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel Margin="18,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Glance" FontSize="22" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="AboutVersion" Style="{StaticResource Hint}" FontSize="13"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Grid Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Made by" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock x:Name="AboutAuthor" Grid.Column="1"/>
+                    </Grid>
+                    <Grid Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Web page" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1"><Hyperlink x:Name="AboutWebPage" RequestNavigate="OnFollowLink"/></TextBlock>
+                    </Grid>
+                    <Grid x:Name="AboutContact" Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Contact" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1"><Hyperlink x:Name="AboutEmail" RequestNavigate="OnFollowLink"/></TextBlock>
+                    </Grid>
+                    <Grid Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Source code" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1"><Hyperlink x:Name="AboutRepository" RequestNavigate="OnFollowLink"/></TextBlock>
+                    </Grid>
+                    <Grid Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Problem or idea" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1"><Hyperlink x:Name="AboutIssues" RequestNavigate="OnFollowLink">Tell us on GitHub</Hyperlink></TextBlock>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                        <Button x:Name="UpdateButton" Content="Check for updates" Click="OnCheckForUpdates"/>
+                        <Button Content="Visit web page" Margin="8,0,0,0" Click="OnVisitWebPage"/>
+                        <Button x:Name="UpdateGet" Content="Open the download page" Margin="8,0,0,0" Click="OnGetUpdate" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <TextBlock x:Name="UpdateStatus" Style="{StaticResource Hint}" Margin="0,8,0,0"
+                               Text="Asks GitHub for the newest version. Nothing is downloaded, and nothing about you or your PC is sent."/>
+
+                    <TextBlock Style="{StaticResource Hint}" Margin="0,26,0,0"
+                               Text="Weather data by Open-Meteo.com. Glance is an independent project and is not made or endorsed by Anthropic. Claude is a trademark of Anthropic."/>
+                </StackPanel>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

@@ -485,11 +485,13 @@ internal sealed class SocketRates
 }
 
 /// <summary>
-/// The five programs sending and receiving the most over the network, averaged over the last few seconds
-/// so that the list can be read (see <see cref="TopList"/>).
+/// The five programs sending and receiving the most over the network, or over just the internet or just the
+/// local network, averaged over the last few seconds so that the list can be read (see <see cref="TopList"/>).
 /// </summary>
-public sealed class NetAppsProvider(TimeSpan interval) : IMetricProvider, IPausable, IDisposable
+public sealed class NetAppsProvider(NetAppsProvider.Traffic traffic, TimeSpan interval) : IMetricProvider, IPausable, IDisposable
 {
+    public enum Traffic { All, Web, Lan }
+
     private const int Shown = 5;
     private const double WorthListing = 1000; // bytes a second: below this a program is just ticking over
     private static readonly TimeSpan Average = TimeSpan.FromSeconds(5);
@@ -504,8 +506,8 @@ public sealed class NetAppsProvider(TimeSpan interval) : IMetricProvider, IPausa
     private List<TopList.Entry> _entries = [];
     private bool _disposed;
 
-    public string Title => "Network by app";
-    public string Id => "netapps";
+    public string Title => traffic switch { Traffic.Web => "Web by app", Traffic.Lan => "LAN by app", _ => "Network by app" };
+    public string Id => traffic switch { Traffic.Web => "webapps", Traffic.Lan => "lanapps", _ => "netapps" };
     public int ReservedRows => Shown;
 
     // Rates over less than a second jump about too much to read.
@@ -540,10 +542,18 @@ public sealed class NetAppsProvider(TimeSpan interval) : IMetricProvider, IPausa
             _lastRates = rates;
             // Several processes of one program are added together, as in the other lists.
             var programs = rates.GroupBy(r => NameOf(r.ProcessId), StringComparer.OrdinalIgnoreCase)
-                .Select(g => new TopList.Entry(g.Key, g.Sum(r => r.Down), g.Sum(r => r.Up)));
+                .Select(g => new TopList.Entry(g.Key, g.Sum(Down), g.Sum(Up)));
             _entries = _top.Update(Stopwatch.GetElapsedTime(0), programs);
         }
-        if (_entries.Count == 0) return MetricSnapshot.Info("No program is using the network much.");
+        if (_entries.Count == 0)
+        {
+            return MetricSnapshot.Info(traffic switch
+            {
+                Traffic.Web => "No program is using the internet much.",
+                Traffic.Lan => "No program is using the local network much.",
+                _ => "No program is using the network much.",
+            });
+        }
 
         return new MetricSnapshot
         {
@@ -554,6 +564,9 @@ public sealed class NetAppsProvider(TimeSpan interval) : IMetricProvider, IPausa
             }).ToList(),
         };
     }
+
+    private double Down(SocketRates.Rate r) => traffic switch { Traffic.Web => r.WebDown, Traffic.Lan => r.LanDown, _ => r.Down };
+    private double Up(SocketRates.Rate r) => traffic switch { Traffic.Web => r.WebUp, Traffic.Lan => r.LanUp, _ => r.Up };
 
     private static TopList NewList() => new(Shown, WorthListing, Average, Hold);
 
@@ -587,7 +600,7 @@ public sealed class NetAppsProvider(TimeSpan interval) : IMetricProvider, IPausa
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
-            return $"pid {processId}";
+            return "closed program"; // gone before it could be asked its name
         }
     }
 }
