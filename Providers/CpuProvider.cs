@@ -61,13 +61,9 @@ public sealed class CpuProvider : IMetricProvider, IDisposable
             .OrderBy(c => ThreadOrder(c.Instance))
             .Select(c => Math.Clamp(c.Value, 0, 100))
             .ToList();
-        if (threads.Count > 0)
-        {
-            var busiest = threads.Max();
-            items.Add(_threadBars
-                ? new MetricItem("Threads") { Key = "threads", ValueText = $"busiest {Format.Percent(busiest)}", Brief = Format.Percent(busiest), Number = busiest, Unit = "%", Bars = threads }
-                : new MetricItem("Busiest core") { Key = "threads", ValueText = Format.Percent(busiest), Number = busiest, Unit = "%" });
-        }
+        var busiest = threads.DefaultIfEmpty(0).Max();
+        if (threads.Count > 0 && !_threadBars)
+            items.Add(new MetricItem("Busiest core") { Key = "threads", ValueText = Format.Percent(busiest), Number = busiest, Unit = "%" });
 
         // Nominal frequency scaled by "% Processor Performance" gives the live speed, turbo included.
         if (_query.Read(_frequency) is { } mhz and > 0 && _query.Read(_performance) is { } performance and > 0)
@@ -88,6 +84,15 @@ public sealed class CpuProvider : IMetricProvider, IDisposable
         // Windows' own energy meter where the PC has one, otherwise whatever a monitoring tool reports.
         if ((PowerProvider.PackageWatts(_query, _meters) ?? sensors.CpuPower) is { } power)
             items.Add(new MetricItem("Power") { Key = "power", ValueText = Format.Whole(power) + " W", Number = power, Unit = "W", Graph = true });
+
+        // The strip of thread bars goes last, so it does not split up the graphs above it.
+        if (threads.Count > 0 && _threadBars)
+        {
+            items.Add(new MetricItem("Threads")
+            {
+                Key = "threads", ValueText = $"busiest {Format.Percent(busiest)}", Brief = Format.Percent(busiest), Number = busiest, Unit = "%", Bars = threads,
+            });
+        }
 
         return new MetricSnapshot { Items = items, Subtitle = Machine.CpuName };
     }
