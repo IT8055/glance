@@ -6,6 +6,8 @@ namespace Glance.Providers;
 /// <summary>How hard the disks are working right now: active time of the busiest disk, and total read and write speed.</summary>
 public sealed class DiskActivityProvider : IMetricProvider, IDisposable
 {
+    private const double MegaByte = 1024 * 1024;
+
     private readonly PdhQuery _query = new();
     private readonly IntPtr _idle;
     private readonly IntPtr _read;
@@ -20,6 +22,7 @@ public sealed class DiskActivityProvider : IMetricProvider, IDisposable
     }
 
     public string Title => "Disk";
+    public string Id => "disk";
     public TimeSpan RefreshInterval { get; }
 
     public async Task<MetricSnapshot> FetchAsync(CancellationToken ct)
@@ -37,14 +40,16 @@ public sealed class DiskActivityProvider : IMetricProvider, IDisposable
         // Name the busy disk by its drive letters once it is doing real work, so the label does not flicker at idle.
         var letters = busiest.Instance is { } name && name.IndexOf(' ') is var space and > 0 ? name[(space + 1)..] : null;
 
+        var read = _query.Read(_read) ?? 0;
+        var write = _query.Read(_write) ?? 0;
         return new MetricSnapshot
         {
             Subtitle = active >= 10 && letters is not null ? "busiest " + letters : null,
             Items =
             [
-                new MetricItem("Active") { Percent = active, ValueText = Format.Percent(active) },
-                new MetricItem("Read") { ValueText = Format.ByteRate(_query.Read(_read) ?? 0) },
-                new MetricItem("Write") { ValueText = Format.ByteRate(_query.Read(_write) ?? 0) },
+                new MetricItem("Active") { Key = "active", Percent = active, ValueText = Format.Percent(active), Number = active, Unit = "%", Graph = true, GraphMax = 100 },
+                new MetricItem("Read") { Key = "read", ValueText = Format.ByteRate(read), Number = read / MegaByte, Unit = "MB/s", Graph = true },
+                new MetricItem("Write") { Key = "write", ValueText = Format.ByteRate(write), Number = write / MegaByte, Unit = "MB/s", Graph = true },
             ],
         };
     }
@@ -56,6 +61,7 @@ public sealed class DiskActivityProvider : IMetricProvider, IDisposable
 public sealed class DriveSpaceProvider : IMetricProvider
 {
     public string Title => "Drives";
+    public string Id => "drives";
 
     // Free space moves slowly, and the widget refreshes on every show anyway.
     public TimeSpan RefreshInterval => TimeSpan.FromSeconds(30);
@@ -74,8 +80,12 @@ public sealed class DriveSpaceProvider : IMetricProvider
                 var letter = drive.Name.TrimEnd('\\');
                 items.Add(new MetricItem(string.IsNullOrWhiteSpace(drive.VolumeLabel) ? letter : $"{letter} {drive.VolumeLabel}")
                 {
+                    Key = letter.TrimEnd(':').ToLowerInvariant(),
                     Percent = percent,
                     ValueText = Format.Size(drive.TotalFreeSpace) + " free",
+                    Brief = $"{letter} {Format.Size(drive.TotalFreeSpace)}",
+                    Number = drive.TotalFreeSpace / (1024.0 * 1024 * 1024),
+                    Unit = "GB free",
                     Level = percent >= 97 ? MetricLevel.Critical : percent >= 90 ? MetricLevel.Warning : MetricLevel.Normal,
                 });
             }

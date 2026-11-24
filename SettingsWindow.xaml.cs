@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Http;
@@ -6,10 +7,25 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Glance.Interop;
 using Glance.Providers;
 
 namespace Glance;
+
+/// <summary>One line in a list of things to tick: a section, a strip reading, a sensor.</summary>
+public sealed class TickRow(string id, string name) : Observable
+{
+    private bool _isOn;
+
+    public string Id { get; } = id;
+    public string Name { get; } = name;
+
+    /// <summary>Dimmed text after the name: why it is unavailable, or its current value.</summary>
+    public string Note { get; init; } = "";
+    public bool IsAvailable { get; init; } = true;
+    public bool IsOn { get => _isOn; set => Set(ref _isOn, value); }
+}
 
 /// <summary>
 /// The options window. Every change applies to the widget immediately and is saved: there is no OK button.
@@ -17,22 +33,30 @@ namespace Glance;
 public partial class SettingsWindow : Window
 {
     private sealed record Choice(string Name, double Value);
+    private sealed record ReadingChoice(string Key, string Name);
+
+    private const string DefaultHint = "Click a shortcut, then press the keys you want.";
+    private const string NoShortcut = "None (click to set)";
+    private const string NoGameProfile = "(don't switch)";
 
     private readonly AppConfig _config;
-    private readonly Action<bool> _apply;
-    private readonly Func<string?, bool> _trySetHotkey;
+    private readonly ISettingsHost _host;
+    private readonly ObservableCollection<TickRow> _sections = [];
+    private readonly ObservableCollection<TickRow> _strip = [];
+    private readonly ObservableCollection<TickRow> _sensors = [];
+    private readonly DispatcherTimer _readingsTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private string _readingsSignature = "";
     private bool _loading;
-    private bool _recording;
+    private Button? _recording;
+    private bool _adminStart;
 
-    /// <param name="apply">Called after each change. True when the sections or their data sources changed.</param>
-    /// <param name="trySetHotkey">Registers a shortcut, or with null just releases the current one. False if taken.</param>
-    public SettingsWindow(AppConfig config, Action<bool> apply, Func<string?, bool> trySetHotkey)
+    internal SettingsWindow(AppConfig config, ISettingsHost host)
     {
         _config = config;
-        _apply = apply;
-        _trySetHotkey = trySetHotkey;
+        _host = host;
         InitializeComponent();
 
+        VersionText.Text = "Glance " + App.Version;
         PositionBox.ItemsSource = Anchors.All.Select(a => new { a.Name, a.Value }).ToList();
         HardwareRate.ItemsSource = new List<Choice>
         {
@@ -41,60 +65,87 @@ public partial class SettingsWindow : Window
         };
         ClaudeRate.ItemsSource = new List<Choice>
         {
-            new("Every 30 seconds", 30), new("Every minute", 60), new("Every 2 minutes", 120), new("Every 5 minutes", 300),
+            new("Every 3 minutes", 180), new("Every 5 minutes", 300), new("Every 10 minutes", 600),
+            new("Every 15 minutes", 900), new("Every 30 minutes", 1800),
         };
+        ThemeBox.ItemsSource = Themes.All.Select(t => t.Name).ToList();
+        SectionList.ItemsSource = _sections;
+        StripList.ItemsSource = _strip;
+        SensorList.ItemsSource = _sensors;
 
+        _adminStart = AdminStart.IsEnabled();
         Load();
+
+        // Readings arrive a moment after the window opens, and change as hardware comes and goes.
+        _readingsTimer.Tick += (_, _) => RefreshReadingLists();
+        _readingsTimer.Start();
+        Closed += (_, _) => _readingsTimer.Stop();
     }
 
-    /// <summary>Fills the controls from the settings. Also called when the widget changes them itself (dragging).</summary>
+    public void SelectTab(int index) => Tabs.SelectedIndex = Math.Clamp(index, 0, Tabs.Items.Count - 1);
+
+    /// <summary>Fills the controls from the settings. Also called when the app changes them itself (dragging, a profile shortcut).</summary>
     public void Load()
     {
         _loading = true;
         try
         {
-            HotkeyButton.Content = _config.Hotkey;
+            ThemeBox.SelectedItem = _config.Theme;
             PositionBox.SelectedValue = _config.Anchor;
             ColumnsBox.SelectedIndex = _config.Columns - 1;
+            ArrangeHint.Text = _config.ActiveProfile.Layout is null
+                ? "Panels are arranged automatically. Drag one by the dots beside its heading to place it yourself."
+                : "You have placed the panels yourself. Choosing a number of columns here arranges them automatically again.";
             SizeSlider.Value = Math.Round(_config.Scale * 100);
             OpacitySlider.Value = Math.Round(_config.Opacity * 100);
-            StartWithWindows.IsChecked = AutoStart.IsEnabled();
-            StartVisible.IsChecked = _config.StartVisible;
+            Graphs.IsChecked = _config.Graphs;
+            Ranges.IsChecked = _config.Ranges;
+            ThreadBars.IsChecked = _config.Hardware.ThreadBars;
             ClickThrough.IsChecked = _config.ClickThrough;
 
-            var hardware = _config.Hardware;
-            HardwareRate.SelectedValue = Nearest(HardwareRate, hardware.RefreshSeconds);
-            ClaudeRate.SelectedValue = Nearest(ClaudeRate, _config.Claude.RefreshSeconds);
-            UseExternalSensors.IsChecked = hardware.ExternalSensors;
+            foreach (var (button, slot) in ShortcutButtons()) button.Content = Shown(ShortcutOf(slot));
+            if (_recording is null) HotkeyHint.Text = DefaultHint;
+            CycleCompact.IsChecked = _config.CycleCompact;
+            StartWithWindows.IsChecked = _adminStart || AutoStart.IsEnabled();
+            RunAsAdmin.IsChecked = _adminStart;
+            StartVisible.IsChecked = _config.StartVisible;
 
-            ShowClaude.IsChecked = _config.Claude.Enabled;
-            ShowFps.IsChecked = hardware.Fps;
-            ShowGpu.IsChecked = hardware.Gpu;
-            ShowCpu.IsChecked = hardware.Cpu;
-            ShowMemory.IsChecked = hardware.Memory;
-            ShowDisk.IsChecked = hardware.Disk;
-            ShowDrives.IsChecked = hardware.Drives;
-            ShowNetwork.IsChecked = hardware.Network;
-            ShowWeather.IsChecked = _config.Weather.Enabled;
-            ShowSpecs.IsChecked = hardware.Specs;
+            ProfileBox.ItemsSource = _config.Profiles.Select(p => p.Name).ToList();
+            ProfileBox.SelectedItem = _config.Profile;
+            ProfileName.Text = _config.Profile;
+            DeleteProfile.IsEnabled = _config.Profiles.Count > 1;
+            GameProfileBox.ItemsSource = new[] { NoGameProfile }.Concat(_config.Profiles.Select(p => p.Name)).ToList();
+            GameProfileBox.SelectedItem = _config.GameProfile.Length > 0 ? _config.GameProfile : NoGameProfile;
+            LoadSections();
+
+            Alerts.IsChecked = _config.Claude.Alerts;
+            AlertLevels.Text = string.Join(", ", _config.Claude.AlertAt);
+            AlertOnReset.IsChecked = _config.Claude.AlertOnReset;
+
+            HardwareRate.SelectedValue = Nearest(HardwareRate, _config.Hardware.RefreshSeconds);
+            ClaudeRate.SelectedValue = Nearest(ClaudeRate, _config.Claude.RefreshSeconds);
+            UseExternalSensors.IsChecked = _config.Hardware.ExternalSensors;
+            PingHost.Text = _config.Hardware.PingHost;
 
             PlaceBox.Text = _config.Weather.Place;
             PlaceStatus.Text = _config.Weather.Latitude is null ? "Type your town and press Find." : "";
             UnitsBox.SelectedIndex = _config.Weather.Fahrenheit ? 2 : _config.Weather.Mph ? 1 : 0;
 
             TracePermission.Visibility = EtwSession.IsAllowedForThisAccount() ? Visibility.Collapsed : Visibility.Visible;
-            NetworkHint.Visibility = EtwSession.IsElevated() ? Visibility.Collapsed : Visibility.Visible;
             UpdateLabels();
         }
         finally
         {
             _loading = false;
         }
+
+        _readingsSignature = "";
+        RefreshReadingLists();
     }
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (_recording) StopRecording(_config.Hotkey);
+        if (_recording is not null) StopRecording(restore: true);
         base.OnClosing(e);
     }
 
@@ -106,42 +157,47 @@ public partial class SettingsWindow : Window
         var before = SourcesSignature();
         var hardware = _config.Hardware;
 
+        if (ThemeBox.SelectedItem is string theme) _config.Theme = theme;
         if (PositionBox.SelectedValue is string anchor) _config.Anchor = anchor;
+        if (ReferenceEquals(sender, ColumnsBox))
+        {
+            // Asking for a number of columns hands the arranging back to Glance.
+            _config.ActiveProfile.Layout = null;
+            ArrangeHint.Text = "Panels are arranged automatically. Drag one by the dots beside its heading to place it yourself.";
+        }
         _config.Columns = ColumnsBox.SelectedIndex + 1;
         _config.Scale = SizeSlider.Value / 100;
         _config.Opacity = OpacitySlider.Value / 100;
-        _config.StartVisible = StartVisible.IsChecked == true;
+        _config.Graphs = Graphs.IsChecked == true;
+        _config.Ranges = Ranges.IsChecked == true;
+        hardware.ThreadBars = ThreadBars.IsChecked == true;
         _config.ClickThrough = ClickThrough.IsChecked == true;
+
+        _config.CycleCompact = CycleCompact.IsChecked == true;
+        _config.StartVisible = StartVisible.IsChecked == true;
+
+        _config.GameProfile = GameProfileBox.SelectedItem is string game && game != NoGameProfile ? game : "";
+        if (TrayBox.SelectedValue is string tray) _config.TrayReading = tray;
+
+        _config.Claude.Alerts = Alerts.IsChecked == true;
+        _config.Claude.AlertOnReset = AlertOnReset.IsChecked == true;
+        var levels = AlertLevels.Text.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => int.TryParse(t.TrimEnd('%'), out var level) ? level : 0)
+            .Where(level => level is > 0 and <= 100).Distinct().Order().ToList();
+        if (levels.Count > 0) _config.Claude.AlertAt = levels;
 
         if (HardwareRate.SelectedValue is double hardwareSeconds) hardware.RefreshSeconds = hardwareSeconds;
         if (ClaudeRate.SelectedValue is double claudeSeconds) _config.Claude.RefreshSeconds = (int)claudeSeconds;
         hardware.ExternalSensors = UseExternalSensors.IsChecked == true;
-
-        _config.Claude.Enabled = ShowClaude.IsChecked == true;
-        hardware.Fps = ShowFps.IsChecked == true;
-        hardware.Gpu = ShowGpu.IsChecked == true;
-        hardware.Cpu = ShowCpu.IsChecked == true;
-        hardware.Memory = ShowMemory.IsChecked == true;
-        hardware.Disk = ShowDisk.IsChecked == true;
-        hardware.Drives = ShowDrives.IsChecked == true;
-        hardware.Network = ShowNetwork.IsChecked == true;
-        _config.Weather.Enabled = ShowWeather.IsChecked == true;
-        hardware.Specs = ShowSpecs.IsChecked == true;
+        if (PingHost.Text.Trim() is { Length: > 0 } host) hardware.PingHost = host;
 
         _config.Weather.Fahrenheit = UnitsBox.SelectedIndex == 2;
         _config.Weather.Mph = UnitsBox.SelectedIndex >= 1;
 
-        if (ReferenceEquals(sender, StartWithWindows))
-        {
-            try { AutoStart.Set(StartWithWindows.IsChecked == true); }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
-            {
-                StartWithWindows.IsChecked = AutoStart.IsEnabled();
-            }
-        }
+        if (ReferenceEquals(sender, StartWithWindows)) SetStartWithWindows(StartWithWindows.IsChecked == true);
 
         UpdateLabels();
-        _apply(before != SourcesSignature());
+        _host.Apply(before != SourcesSignature());
     }
 
     private void UpdateLabels()
@@ -168,35 +224,280 @@ public partial class SettingsWindow : Window
     {
         var h = _config.Hardware;
         var w = _config.Weather;
-        return string.Join('|', _config.Claude.Enabled, _config.Claude.RefreshSeconds, h.RefreshSeconds, h.Fps, h.Gpu, h.Cpu,
-            h.Memory, h.Disk, h.Drives, h.Network, h.Specs, h.ExternalSensors, w.Enabled, w.Latitude, w.Longitude, w.Fahrenheit, w.Mph);
+        return string.Join('|', _config.Profile, string.Join(',', _config.ActiveProfile.Sections), string.Join(',', _config.Strip),
+            string.Join(',', h.Sensors), _config.TrayReading, _config.Claude.Alerts, _config.Claude.RefreshSeconds, h.RefreshSeconds,
+            h.ExternalSensors, h.ThreadBars, h.PingHost, w.Latitude, w.Longitude, w.Fahrenheit, w.Mph);
     }
 
     private static double Nearest(ComboBox box, double value) =>
         ((IEnumerable<Choice>)box.ItemsSource).MinBy(c => Math.Abs(c.Value - value))!.Value;
 
-    // Shortcut recorder: click the button, then press the combination.
+    // ---- Profiles and sections ----
+
+    private void LoadSections()
+    {
+        var on = _config.ActiveProfile.Sections;
+        var order = on.Concat(Sections.All.Select(s => s.Id).Where(id => !on.Contains(id)));
+
+        _sections.Clear();
+        foreach (var id in order)
+        {
+            var why = Sections.WhyUnavailable(id, _config);
+            _sections.Add(new TickRow(id, Sections.NameOf(id))
+            {
+                IsOn = on.Contains(id),
+                Note = why is null ? "" : $"({why})",
+                // Still tickable if it is already on, so it can be taken off.
+                IsAvailable = why is null || on.Contains(id),
+            });
+        }
+    }
+
+    private void SaveSections()
+    {
+        _config.ActiveProfile.SetSections(_sections.Where(r => r.IsOn).Select(r => r.Id).ToList());
+        _host.Apply(sourcesChanged: true);
+    }
+
+    private void OnListTicked(object sender, RoutedEventArgs e)
+    {
+        if (_loading || (sender as FrameworkElement)?.DataContext is not TickRow row) return;
+
+        if (_sections.Contains(row)) SaveSections();
+        else if (_strip.Contains(row)) SaveStrip();
+        else if (_sensors.Contains(row)) SaveSensors();
+    }
+
+    private void OnSectionUp(object sender, RoutedEventArgs e) => Move(SectionList, _sections, -1, SaveSections);
+    private void OnSectionDown(object sender, RoutedEventArgs e) => Move(SectionList, _sections, 1, SaveSections);
+    private void OnStripUp(object sender, RoutedEventArgs e) => Move(StripList, _strip, -1, SaveStrip);
+    private void OnStripDown(object sender, RoutedEventArgs e) => Move(StripList, _strip, 1, SaveStrip);
+
+    private static void Move(ListBox list, ObservableCollection<TickRow> rows, int by, Action save)
+    {
+        var from = list.SelectedIndex;
+        var to = from + by;
+        if (from < 0 || to < 0 || to >= rows.Count) return;
+
+        rows.Move(from, to);
+        list.SelectedIndex = to;
+        list.ScrollIntoView(rows[to]);
+        save();
+    }
+
+    private void OnProfileChosen(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || ProfileBox.SelectedItem is not string name || name == _config.Profile) return;
+
+        _config.Profile = name;
+        _host.Apply(sourcesChanged: true);
+        Load();
+    }
+
+    private void OnNewProfile(object sender, RoutedEventArgs e)
+    {
+        var number = _config.Profiles.Count + 1;
+        string name;
+        do { name = $"Profile {number++}"; } while (_config.Profiles.Any(p => p.Name == name));
+
+        // Starts as a copy of the profile in use, which is usually close to what is wanted.
+        _config.Profiles.Add(new ProfileConfig { Name = name, Sections = _config.ActiveProfile.Sections.ToList() });
+        _config.Profile = name;
+        _host.Apply(sourcesChanged: true);
+        Load();
+        ProfileName.Focus();
+        ProfileName.SelectAll();
+    }
+
+    private void OnDeleteProfile(object sender, RoutedEventArgs e)
+    {
+        if (_config.Profiles.Count <= 1) return;
+
+        _config.Profiles.Remove(_config.ActiveProfile);
+        _config.Profile = _config.Profiles[0].Name;
+        if (_config.Profiles.All(p => p.Name != _config.GameProfile)) _config.GameProfile = "";
+        _host.Apply(sourcesChanged: true);
+        Load();
+    }
+
+    private void OnProfileNameKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        OnProfileRenamed(sender, e);
+    }
+
+    private void OnProfileRenamed(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var name = ProfileName.Text.Trim();
+        var profile = _config.ActiveProfile;
+        if (name.Length == 0 || name == profile.Name || name == NoGameProfile || _config.Profiles.Any(p => p.Name == name))
+        {
+            ProfileName.Text = profile.Name;
+            return;
+        }
+
+        if (_config.GameProfile == profile.Name) _config.GameProfile = name;
+        profile.Name = name;
+        _config.Profile = name;
+        _host.Apply(sourcesChanged: false);
+        Load();
+    }
+
+    // ---- Tray reading and compact strip ----
+
+    // Rebuilds the two pickers when the set of readings changes, keeping what is chosen.
+    private void RefreshReadingLists()
+    {
+        if (TrayBox.IsDropDownOpen) return;
+
+        var readings = _host.Readings();
+        var signature = string.Join('|', readings.Select(r => r.Key)) + "#" + string.Join('|', _config.Strip) + "#" + _config.TrayReading;
+        if (signature == _readingsSignature) return;
+        _readingsSignature = signature;
+
+        var names = new Dictionary<string, string>();
+        foreach (var (key, name) in readings) names.TryAdd(key, name);
+
+        _loading = true;
+        try
+        {
+            var tray = new List<ReadingChoice> { new("", "The Glance icon, no reading") };
+            tray.AddRange(names.Select(n => new ReadingChoice(n.Key, n.Value)));
+            // A chosen reading whose section is not answering right now still has to be listed, or it would be lost.
+            if (_config.TrayReading.Length > 0 && !names.ContainsKey(_config.TrayReading))
+                tray.Add(new ReadingChoice(_config.TrayReading, _config.TrayReading + " (not available right now)"));
+            TrayBox.ItemsSource = tray;
+            TrayBox.SelectedValue = _config.TrayReading;
+
+            var selected = (StripList.SelectedItem as TickRow)?.Id;
+            _strip.Clear();
+            foreach (var key in _config.Strip)
+            {
+                _strip.Add(new TickRow(key, names.GetValueOrDefault(key, key))
+                {
+                    IsOn = true,
+                    Note = names.ContainsKey(key) ? "" : "(not available right now)",
+                });
+            }
+            foreach (var (key, name) in names.Where(n => !_config.Strip.Contains(n.Key)))
+                _strip.Add(new TickRow(key, name));
+            StripList.SelectedItem = _strip.FirstOrDefault(r => r.Id == selected);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SaveStrip()
+    {
+        _config.Strip = _strip.Where(r => r.IsOn).Select(r => r.Id).ToList();
+        _readingsSignature = "";
+        _host.Apply(sourcesChanged: true);
+    }
+
+    // ---- Extra sensors ----
+
+    private void OnSensorPickerOpened(object sender, RoutedEventArgs e)
+    {
+        _loading = true;
+        try
+        {
+            _sensors.Clear();
+            var chosen = _config.Hardware.Sensors;
+            var seen = new HashSet<string>();
+            foreach (var reading in ExternalSensors.Current.Readings)
+            {
+                var id = SensorsProvider.NameOf(reading);
+                if (!seen.Add(id) || !double.IsFinite(reading.Value)) continue;
+                _sensors.Add(new TickRow(id, reading.Label)
+                {
+                    IsOn = chosen.Contains(id),
+                    Note = Format.WithUnit(reading.Value, reading.Unit),
+                });
+            }
+            // Picked earlier but not being published now (the tool is closed): keep them listed so they are not lost.
+            foreach (var id in chosen.Where(id => !seen.Contains(id)))
+                _sensors.Add(new TickRow(id, id.Replace("|", ": ")) { IsOn = true, Note = "(not available right now)" });
+
+            if (_sensors.Count == 0)
+                _sensors.Add(new TickRow("", "Start HWiNFO or MSI Afterburner, then open this again.") { IsAvailable = false });
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SaveSensors()
+    {
+        _config.Hardware.Sensors = _sensors.Where(r => r.IsOn && r.Id.Length > 0).Select(r => r.Id).ToList();
+
+        // Picking a sensor is asking to see it, so the section is added to the profile if it is not there.
+        var profile = _config.ActiveProfile;
+        if (_config.Hardware.Sensors.Count > 0 && !profile.Sections.Contains("sensors"))
+        {
+            profile.Add("sensors");
+            _loading = true;
+            LoadSections();
+            _loading = false;
+        }
+        _host.Apply(sourcesChanged: true);
+    }
+
+    // ---- Shortcut recorder: click a button, then press the combination ----
+
+    private IEnumerable<(Button Button, int Slot)> ShortcutButtons() =>
+        [(HotkeyMain, OverlayWindow.ShowHide), (HotkeyCompact, OverlayWindow.CompactStrip),
+         (HotkeyBenchmark, OverlayWindow.Benchmark), (HotkeyProfile, OverlayWindow.NextProfile)];
+
+    private string ShortcutOf(int slot) => slot switch
+    {
+        OverlayWindow.ShowHide => _config.Hotkey,
+        OverlayWindow.CompactStrip => _config.CompactHotkey,
+        OverlayWindow.Benchmark => _config.BenchmarkHotkey,
+        _ => _config.ProfileHotkey,
+    };
+
+    private void SetShortcut(int slot, string shortcut)
+    {
+        switch (slot)
+        {
+            case OverlayWindow.ShowHide: _config.Hotkey = shortcut; break;
+            case OverlayWindow.CompactStrip: _config.CompactHotkey = shortcut; break;
+            case OverlayWindow.Benchmark: _config.BenchmarkHotkey = shortcut; break;
+            default: _config.ProfileHotkey = shortcut; break;
+        }
+    }
+
+    private static string Shown(string shortcut) => shortcut.Length > 0 ? shortcut : NoShortcut;
+    private int SlotOf(Button button) => ShortcutButtons().First(b => b.Button == button).Slot;
 
     private void OnRecordHotkey(object sender, RoutedEventArgs e)
     {
-        if (_recording) return;
-        _recording = true;
-        // Release the current shortcut so pressing it again is seen here instead of toggling the widget.
-        _trySetHotkey(null);
-        HotkeyButton.Content = "Press the new shortcut…";
-        HotkeyHint.Text = "Esc cancels.";
-        HotkeyButton.Focus();
+        if (_recording is not null || sender is not Button button) return;
+
+        _recording = button;
+        // Release the current shortcut so pressing it again is seen here instead of acting.
+        _host.TrySetHotkey(SlotOf(button), null);
+        button.Content = "Press the new shortcut…";
+        HotkeyHint.Text = SlotOf(button) == OverlayWindow.ShowHide ? "Esc cancels." : "Esc cancels. Backspace removes the shortcut.";
+        button.Focus();
     }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
-        if (!_recording)
+        if (_recording is not { } button)
         {
             base.OnPreviewKeyDown(e);
             return;
         }
 
         e.Handled = true;
+        var slot = SlotOf(button);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift
             or Key.LWin or Key.RWin or Key.ImeProcessed or Key.DeadCharProcessed)
@@ -204,14 +505,20 @@ public partial class SettingsWindow : Window
             return; // still holding modifiers down: wait for the real key
         }
 
-        if (key == Key.Escape)
+        var modifiers = Keyboard.Modifiers;
+        if (key == Key.Escape && modifiers == ModifierKeys.None)
         {
-            StopRecording(_config.Hotkey);
-            HotkeyHint.Text = "Shows and hides the widget from anywhere. Click to change it.";
+            StopRecording(restore: true);
+            return;
+        }
+        if (key is Key.Back or Key.Delete && modifiers == ModifierKeys.None && slot != OverlayWindow.ShowHide)
+        {
+            SetShortcut(slot, "");
+            StopRecording(restore: false);
+            _host.Apply(sourcesChanged: false);
             return;
         }
 
-        var modifiers = Keyboard.Modifiers;
         var parts = new List<string>();
         if (modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
         if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
@@ -219,7 +526,7 @@ public partial class SettingsWindow : Window
         if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
 
         // A bare letter or digit as a global shortcut would swallow that key in every program.
-        var needsModifier = key is >= Key.A and <= Key.Z or >= Key.D0 and <= Key.D9 or Key.Space or Key.Enter or Key.Tab or Key.Back;
+        var needsModifier = key is >= Key.A and <= Key.Z or >= Key.D0 and <= Key.D9 or Key.Space or Key.Enter or Key.Tab or Key.Back or Key.Delete;
         if (parts.Count == 0 && needsModifier)
         {
             HotkeyHint.Text = "Hold Ctrl, Alt, Shift or Win as well.";
@@ -229,28 +536,95 @@ public partial class SettingsWindow : Window
         parts.Add(key is >= Key.D0 and <= Key.D9 ? ((int)(key - Key.D0)).ToString() : key.ToString());
         var shortcut = string.Join('+', parts);
 
-        if (_trySetHotkey(shortcut))
+        if (ShortcutButtons().Any(b => b.Slot != slot && string.Equals(ShortcutOf(b.Slot), shortcut, StringComparison.OrdinalIgnoreCase)))
         {
-            _config.Hotkey = shortcut;
-            StopRecording(shortcut, register: false);
-            HotkeyHint.Text = "Shows and hides the widget from anywhere. Click to change it.";
-            _apply(false);
+            StopRecording(restore: true, hint: $"{shortcut} is already one of the shortcuts above.");
+        }
+        else if (_host.TrySetHotkey(slot, shortcut))
+        {
+            SetShortcut(slot, shortcut);
+            StopRecording(restore: false);
+            _host.Apply(sourcesChanged: false);
         }
         else
         {
-            StopRecording(_config.Hotkey);
-            HotkeyHint.Text = $"{shortcut} is already used by another app. The shortcut is unchanged.";
+            StopRecording(restore: true, hint: $"{shortcut} is already used by another app. The shortcut is unchanged.");
         }
     }
 
-    private void StopRecording(string shortcut, bool register = true)
+    private void StopRecording(bool restore, string? hint = null)
     {
-        _recording = false;
-        if (register) _trySetHotkey(shortcut);
-        HotkeyButton.Content = shortcut;
+        if (_recording is not { } button) return;
+
+        var slot = SlotOf(button);
+        _recording = null;
+        if (restore) _host.TrySetHotkey(slot, ShortcutOf(slot));
+        button.Content = Shown(ShortcutOf(slot));
+        HotkeyHint.Text = hint ?? DefaultHint;
     }
 
-    // Weather place search.
+    // ---- Starting with Windows ----
+
+    private void SetStartWithWindows(bool on)
+    {
+        try
+        {
+            if (!on && _adminStart)
+            {
+                // The administrator task is what starts it, so that is what has to go. Windows asks for approval.
+                if (AdminStart.Set(false)) _adminStart = false;
+            }
+            AutoStart.Set(on && !_adminStart);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+        {
+        }
+
+        _loading = true;
+        StartWithWindows.IsChecked = _adminStart || AutoStart.IsEnabled();
+        RunAsAdmin.IsChecked = _adminStart;
+        _loading = false;
+    }
+
+    private void OnRunAsAdminClicked(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        var wanted = RunAsAdmin.IsChecked == true;
+        if (AdminStart.Set(wanted))
+        {
+            _adminStart = wanted;
+            try
+            {
+                // Only one of the two should start Glance, or the plain one could win the race at sign-in.
+                AutoStart.Set(!wanted && StartWithWindows.IsChecked == true);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+            {
+            }
+            AdminHint.Text = wanted
+                ? "Done. Glance will start as administrator from the next sign-in."
+                : "Glance no longer starts as administrator.";
+            RestartAdmin.Visibility = wanted && !EtwSession.IsElevated() ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else
+        {
+            AdminHint.Text = "Windows did not approve the change, so nothing was changed.";
+        }
+
+        _loading = true;
+        RunAsAdmin.IsChecked = _adminStart;
+        StartWithWindows.IsChecked = _adminStart || AutoStart.IsEnabled();
+        _loading = false;
+    }
+
+    private void OnRestartAdmin(object sender, RoutedEventArgs e)
+    {
+        if (AdminStart.RestartElevated()) _host.Quit();
+        else AdminHint.Text = "Windows did not approve the restart.";
+    }
+
+    // ---- Weather place search ----
 
     private void OnPlaceKeyDown(object sender, KeyEventArgs e)
     {
@@ -304,18 +678,21 @@ public partial class SettingsWindow : Window
         _config.Weather.Place = place.Name;
         _config.Weather.Latitude = place.Latitude;
         _config.Weather.Longitude = place.Longitude;
-        _config.Weather.Enabled = true;
+
+        // Choosing a town is asking for the weather, so the section is added to the profile if it is not there.
+        var profile = _config.ActiveProfile;
+        profile.Add("weather");
 
         _loading = true;
         PlaceBox.Text = place.Name;
-        ShowWeather.IsChecked = true;
+        LoadSections();
         _loading = false;
 
         PlaceStatus.Text = "";
-        _apply(true);
+        _host.Apply(sourcesChanged: true);
     }
 
-    // Permission for FPS and the web/LAN split, for accounts that do not have it yet.
+    // ---- Permission for the FPS counter, for accounts that do not have it yet ----
 
     private void OnGrantPermission(object sender, RoutedEventArgs e)
     {
@@ -353,6 +730,8 @@ public partial class SettingsWindow : Window
             Process.Start("notepad.exe", $"\"{AppPaths.ConfigFile}\"");
         }
     }
+
+    private void OnOpenBenchmarks(object sender, RoutedEventArgs e) => _host.OpenBenchmarksFolder();
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

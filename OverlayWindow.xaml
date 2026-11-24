@@ -9,128 +9,321 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         FontFamily="Segoe UI">
 
+    <!--
+        Colours come from the theme (see Theme.cs), which fills in WindowBrush, PanelBrush, AccentBrush and
+        the rest. They are always referred to with DynamicResource so a change of theme recolours everything.
+    -->
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Vis"/>
 
+        <!-- A bar. Its colour follows the reading's level. -->
         <Style x:Key="Meter" TargetType="ProgressBar">
             <Setter Property="Height" Value="6"/>
             <Setter Property="Minimum" Value="0"/>
             <Setter Property="Maximum" Value="100"/>
             <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ProgressBar">
                         <Grid>
-                            <Border x:Name="PART_Track" CornerRadius="3" Background="#1FFFFFFF"/>
+                            <Border x:Name="PART_Track" CornerRadius="3" Background="{DynamicResource TrackBrush}"/>
                             <Border x:Name="PART_Indicator" CornerRadius="3" HorizontalAlignment="Left"
                                     Background="{TemplateBinding Foreground}"/>
                         </Grid>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Critical">
+                    <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
-        <!-- A full-width reading: label, value, and usually a bar. -->
+        <Style x:Key="Graph" TargetType="local:Sparkline">
+            <Setter Property="Stroke" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Baseline" Value="{DynamicResource TrackBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="Warning">
+                    <Setter Property="Stroke" Value="{DynamicResource WarningBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Critical">
+                    <Setter Property="Stroke" Value="{DynamicResource CriticalBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A value. White (or the theme's equivalent) unless the reading has no bar to carry a warning. -->
+        <Style x:Key="ValueText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource ValueBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ValueLevel}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding ValueLevel}" Value="Critical">
+                    <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A full-width reading: label and value, then a bar, a graph of the last minute, or a strip of small bars. -->
         <DataTemplate x:Key="Row">
             <StackPanel Margin="0,0,0,12">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding ValueText}" Margin="8,0,0,0"
-                               Foreground="#FFFFFFFF" FontSize="13" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding Label}" Foreground="#E0FFFFFF" FontSize="13"
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding ValueText}" Margin="8,0,0,0" FontSize="13"
+                               Style="{StaticResource ValueText}"/>
+                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource LabelBrush}" FontSize="13"
                                TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
-                <ProgressBar Style="{StaticResource Meter}" Margin="0,7,0,0"
-                             Value="{Binding Percent, Mode=OneWay}" Foreground="{Binding BarBrush}"
-                             Visibility="{Binding HasBar, Converter={StaticResource Vis}}"/>
-                <TextBlock Text="{Binding Detail}" Margin="0,6,0,0" Foreground="#80FFFFFF" FontSize="11"
+                <ProgressBar Style="{StaticResource Meter}" Margin="0,7,0,0" Value="{Binding Percent, Mode=OneWay}"
+                             Visibility="{Binding ShowBar, Converter={StaticResource Vis}}"/>
+                <local:Sparkline Style="{StaticResource Graph}" Height="22" Margin="0,5,0,0"
+                                 Values="{Binding History}" Maximum="{Binding GraphMax}"
+                                 Visibility="{Binding ShowGraph, Converter={StaticResource Vis}}"/>
+                <local:MiniBars Height="20" Margin="0,7,0,0" Values="{Binding Bars}"
+                                Fill="{DynamicResource AccentBrush}" Track="{DynamicResource TrackBrush}"
+                                Visibility="{Binding HasBars, Converter={StaticResource Vis}}"/>
+                <TextBlock Text="{Binding Detail}" Margin="0,6,0,0" Foreground="{DynamicResource FaintBrush}" FontSize="11"
                            TextTrimming="CharacterEllipsis"
                            Visibility="{Binding HasDetail, Converter={StaticResource Vis}}"/>
             </StackPanel>
         </DataTemplate>
 
-        <!-- A compact reading. Two share a line. -->
+        <!-- A compact reading. Two share a line. The second line is the lowest and highest seen, when that is switched on. -->
         <DataTemplate x:Key="Tile">
-            <DockPanel Margin="0,0,16,8">
-                <TextBlock DockPanel.Dock="Right" Text="{Binding ValueText}" Margin="6,0,0,0"
-                           Foreground="{Binding ValueBrush}" FontSize="12.5" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding Label}" Foreground="#99FFFFFF" FontSize="12"
-                           TextTrimming="CharacterEllipsis"/>
-            </DockPanel>
-        </DataTemplate>
-
-        <DataTemplate DataType="{x:Type local:SectionViewModel}">
-            <StackPanel>
-                <DockPanel Margin="0,0,0,10">
-                    <TextBlock DockPanel.Dock="Right" Text="{Binding UpdatedText}" Foreground="#66FFFFFF" FontSize="11"/>
-                    <TextBlock DockPanel.Dock="Left" Text="{Binding Heading}" Foreground="#8CFFFFFF" FontSize="11" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding Subtitle}" Margin="8,0,8,0" Foreground="#73FFFFFF" FontSize="11"
+            <StackPanel Margin="0,0,16,8">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding ValueText}" Margin="6,0,0,0" FontSize="12.5"
+                               Style="{StaticResource ValueText}"/>
+                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource DimBrush}" FontSize="12"
                                TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
-                <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource Row}" Focusable="False"/>
-                <!-- The negative margin cancels the right-hand gap of the second tile on each line. -->
-                <ItemsControl ItemsSource="{Binding Tiles}" ItemTemplate="{StaticResource Tile}" Focusable="False"
-                              Margin="0,0,-16,4" Visibility="{Binding HasTiles, Converter={StaticResource Vis}}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <UniformGrid Columns="2"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                </ItemsControl>
-                <TextBlock Text="{Binding Notice}" Margin="0,0,0,12" FontSize="11" TextWrapping="Wrap"
-                           Foreground="{Binding NoticeBrush}"
-                           Visibility="{Binding HasNotice, Converter={StaticResource Vis}}"/>
+                <TextBlock Text="{Binding RangeText}" Margin="0,1,0,0" HorizontalAlignment="Right"
+                           Foreground="{DynamicResource FaintBrush}" FontSize="10.5"
+                           Visibility="{Binding HasRange, Converter={StaticResource Vis}}"/>
             </StackPanel>
         </DataTemplate>
 
-        <!-- The settings button: invisible until the pointer is over the widget. -->
-        <Style x:Key="GearButton" TargetType="Button">
+        <!-- A small button in a panel's heading line. -->
+        <Style x:Key="HeaderButton" TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource DimBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Disc" Width="24" Height="24" CornerRadius="12" Background="#FF2A2D35">
-                            <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
-                                       Foreground="#D9FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border x:Name="Back" Width="20" Height="20" CornerRadius="5" Background="Transparent">
+                            <TextBlock Text="{TemplateBinding Content}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11"
+                                       Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Disc" Property="Background" Value="#FF3D4250"/>
+                                <Setter TargetName="Back" Property="Background" Value="{DynamicResource TrackBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ValueBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMouseOver, ElementName=Root}" Value="True">
-                    <Setter Property="Opacity" Value="1"/>
-                </DataTrigger>
-            </Style.Triggers>
+        </Style>
+
+        <!-- One section: a bordered panel with a heading line, then its readings. -->
+        <DataTemplate DataType="{x:Type local:SectionViewModel}">
+            <Border CornerRadius="10" Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1" Padding="12,9,12,0">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,9" Height="20">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource HeaderButton}" Content="&#xE72C;" Margin="4,0,-4,0"
+                                ToolTip="Check now" Click="OnCheckNowClick"
+                                Visibility="{Binding CanCheckNow, Converter={StaticResource Vis}}"/>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding UpdatedText}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource FaintBrush}" FontSize="11"/>
+                        <!-- The handle for dragging the panel somewhere else. Six dots, drawn rather than taken from a font. -->
+                        <Border DockPanel.Dock="Left" Tag="SectionGrip" Background="Transparent" Cursor="SizeAll"
+                                Width="14" Margin="-5,0,3,0" ToolTip="Drag to move this panel">
+                            <UniformGrid Columns="2" Rows="3" Width="8" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.55">
+                                <Ellipse Width="2.2" Height="2.2" Fill="{DynamicResource DimBrush}"/>
+                                <Ellipse Width="2.2" Height="2.2" Fill="{DynamicResource DimBrush}"/>
+                                <Ellipse Width="2.2" Height="2.2" Fill="{DynamicResource DimBrush}"/>
+                                <Ellipse Width="2.2" Height="2.2" Fill="{DynamicResource DimBrush}"/>
+                                <Ellipse Width="2.2" Height="2.2" Fill="{DynamicResource DimBrush}"/>
+                                <Ellipse Width="2.2" Height="2.2" Fill="{DynamicResource DimBrush}"/>
+                            </UniformGrid>
+                        </Border>
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding Heading}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource HeadingBrush}" FontSize="11" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding Subtitle}" Margin="8,0,8,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource DimBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource Row}" Focusable="False"/>
+                    <!-- The negative margin cancels the right-hand gap of the second tile on each line. -->
+                    <ItemsControl ItemsSource="{Binding Tiles}" ItemTemplate="{StaticResource Tile}" Focusable="False"
+                                  Margin="0,0,-16,4" Visibility="{Binding HasTiles, Converter={StaticResource Vis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="2"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding Notice}" Margin="0,0,0,12" FontSize="11" TextWrapping="Wrap"
+                               Visibility="{Binding HasNotice, Converter={StaticResource Vis}}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource DimBrush}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding NoticeIsError}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- One value in the compact strip, coloured by its level. -->
+        <DataTemplate DataType="{x:Type local:StripValue}">
+            <TextBlock Text="{Binding Text}" Margin="0,0,7,0" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{DynamicResource ValueBrush}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Level}" Value="Critical">
+                                <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </DataTemplate>
+
+        <!-- One section's part of the compact strip: "GPU 97% 64 °C". -->
+        <DataTemplate DataType="{x:Type local:StripGroup}">
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                <TextBlock Text="{Binding Title}" Margin="0,1,7,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource HeadingBrush}" FontSize="10.5" FontWeight="SemiBold"/>
+                <ItemsControl ItemsSource="{Binding Values}" Focusable="False" Margin="0,0,-7,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- The settings button. -->
+        <Style x:Key="GearButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip" Value="Settings"/>
+            <Setter Property="Foreground" Value="{DynamicResource DimBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Disc" Width="22" Height="22" CornerRadius="11" Background="Transparent">
+                            <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
+                                       Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Disc" Property="Background" Value="{DynamicResource TrackBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ValueBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Shown while a benchmark is being recorded. -->
+        <Style x:Key="RecordingBadge" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
     </Window.Resources>
 
-    <!-- The margin leaves room for the shadow. The shadow sits on its own layer so the text stays sharp. -->
+    <!-- The margin leaves room for the shadow. Shadows sit on their own layer so the text stays sharp. -->
     <Grid x:Name="Root" Margin="12" Background="Transparent">
         <Grid.LayoutTransform>
             <ScaleTransform x:Name="Zoom"/>
         </Grid.LayoutTransform>
-        <Border CornerRadius="14" Background="#FF14161B">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Opacity="0.5"/>
-            </Border.Effect>
-        </Border>
-        <Border CornerRadius="14" Background="#FF14161B" BorderBrush="#2EFFFFFF" BorderThickness="1"
-                Padding="16,14,16,4">
-            <ItemsControl ItemsSource="{Binding Sections}" Focusable="False">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <local:ColumnsPanel Columns="{Binding Columns}" MaxColumnHeight="{Binding MaxColumnHeight}"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-        </Border>
-        <Button Style="{StaticResource GearButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,8,0"
-                ToolTip="Settings" Click="OnGearClick"/>
+
+        <!-- The full widget: a title line, then the section panels -->
+        <Grid Visibility="{Binding IsFull, Converter={StaticResource Vis}}">
+            <Border CornerRadius="14" Background="{DynamicResource WindowBrush}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Opacity="0.5"/>
+                </Border.Effect>
+            </Border>
+            <Border CornerRadius="14" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource PanelBorderBrush}"
+                    BorderThickness="1" Padding="10,6,10,10">
+                <StackPanel>
+                    <!-- Grab this line, or any gap, to move the whole widget. -->
+                    <DockPanel Height="24" Margin="4,0,0,4">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource GearButton}" Click="OnGearClick"/>
+                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource RecordingBadge}" Text="{Binding Recording}" Margin="0,0,8,0"
+                                   Visibility="{Binding IsRecording, Converter={StaticResource Vis}}"/>
+                        <TextBlock Text="{Binding ProfileTitle}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource HeadingBrush}" FontSize="10.5" FontWeight="SemiBold"/>
+                    </DockPanel>
+                    <Grid>
+                        <ItemsControl x:Name="SectionsHost" ItemsSource="{Binding Sections}" Focusable="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <local:ColumnsPanel Columns="{Binding Columns}" MaxColumnHeight="{Binding MaxColumnHeight}"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="local:ColumnsPanel.Column" Value="{Binding Column}"/>
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                        </ItemsControl>
+                        <!-- Shows where a panel being dragged will land. Positioned from code. -->
+                        <Canvas IsHitTestVisible="False">
+                            <Rectangle x:Name="DropMarker" Fill="{DynamicResource AccentBrush}" RadiusX="1.5" RadiusY="1.5" Visibility="Collapsed"/>
+                        </Canvas>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- The compact strip: one line of chosen readings -->
+        <Grid Visibility="{Binding IsCompact, Converter={StaticResource Vis}}">
+            <Border CornerRadius="12" Background="{DynamicResource PanelBrush}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270" Opacity="0.5"/>
+                </Border.Effect>
+            </Border>
+            <Border CornerRadius="12" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource PanelBorderBrush}"
+                    BorderThickness="1" Padding="14,7,10,8" MinHeight="34">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource RecordingBadge}" Text="{Binding Recording}" Margin="0,0,14,0"
+                               Visibility="{Binding IsRecording, Converter={StaticResource Vis}}"/>
+                    <ItemsControl ItemsSource="{Binding Strip}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding StripHint}" Foreground="{DynamicResource DimBrush}" FontSize="12" VerticalAlignment="Center" Margin="0,0,10,0"
+                               Visibility="{Binding HasStripHint, Converter={StaticResource Vis}}"/>
+                    <Button Style="{StaticResource GearButton}" VerticalAlignment="Center" Margin="-6,0,0,0" Click="OnGearClick"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

@@ -16,8 +16,10 @@ public sealed class NetworkProvider : IMetricProvider, IPausable, IDisposable
     private readonly PdhQuery _query = new();
     private readonly IntPtr _received;
     private readonly IntPtr _sent;
+    private readonly object _gate = new();
     private TrafficTracker? _tracker;
     private bool _splitUnavailable;
+    private bool _disposed;
 
     public NetworkProvider(TimeSpan interval)
     {
@@ -27,24 +29,35 @@ public sealed class NetworkProvider : IMetricProvider, IPausable, IDisposable
     }
 
     public string Title => "Network";
+    public string Id => "network";
     public TimeSpan RefreshInterval { get; }
 
     public async Task<MetricSnapshot> FetchAsync(CancellationToken ct)
     {
-        if (_tracker is null && !_splitUnavailable)
+        // Only an administrator may read per-connection events, so do not even try otherwise.
+        if (_tracker is null && !_splitUnavailable && !EtwSession.IsElevated()) _splitUnavailable = true;
+
+        TrafficTracker? tracker;
+        lock (_gate)
         {
-            try
+            // A fetch that was already queued when the section was shut down must not start a new trace.
+            if (_disposed) return MetricSnapshot.Info("");
+            if (_tracker is null && !_splitUnavailable)
             {
-                _tracker = new TrafficTracker();
+                try
+                {
+                    _tracker = new TrafficTracker();
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
+                {
+                    _splitUnavailable = true;
+                    Log.Write("Web and LAN traffic split is unavailable, showing totals instead: " + ex.Message);
+                }
             }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException)
-            {
-                _splitUnavailable = true;
-                Log.Write("Web and LAN traffic split is unavailable, showing totals instead: " + ex.Message);
-            }
+            tracker = _tracker;
         }
 
-        if (_tracker is { } tracker)
+        if (tracker is not null)
         {
             if (await tracker.ReadAsync(ct) is { } rates)
             {
@@ -52,10 +65,10 @@ public sealed class NetworkProvider : IMetricProvider, IPausable, IDisposable
                 {
                     Items =
                     [
-                        new MetricItem("Web down") { ValueText = Format.BitRate(rates.WebDown) },
-                        new MetricItem("Web up") { ValueText = Format.BitRate(rates.WebUp) },
-                        new MetricItem("LAN down") { ValueText = Format.BitRate(rates.LanDown) },
-                        new MetricItem("LAN up") { ValueText = Format.BitRate(rates.LanUp) },
+                        Speed("Web down", "web_down", rates.WebDown),
+                        Speed("Web up", "web_up", rates.WebUp),
+                        Speed("LAN down", "lan_down", rates.LanDown),
+                        Speed("LAN up", "lan_up", rates.LanUp),
                     ],
                 };
             }
@@ -74,22 +87,32 @@ public sealed class NetworkProvider : IMetricProvider, IPausable, IDisposable
 
         return new MetricSnapshot
         {
-            Items =
-            [
-                new MetricItem("Down") { ValueText = Format.BitRate(busiest.Down) },
-                new MetricItem("Up") { ValueText = Format.BitRate(busiest.Up) },
-            ],
+            Items = [Speed("Down", "down", busiest.Down), Speed("Up", "up", busiest.Up)],
         };
     }
 
+    // The number is kept in megabits per second, the unit people quote connection speeds in.
+    private static MetricItem Speed(string label, string key, double bytesPerSecond) => new(label)
+    {
+        Key = key,
+        ValueText = Format.BitRate(bytesPerSecond),
+        Number = Math.Max(0, bytesPerSecond) * 8 / 1_000_000,
+        Unit = "Mbps",
+        Graph = true,
+    };
+
     public void Pause()
     {
-        _tracker?.Dispose();
-        _tracker = null;
+        lock (_gate)
+        {
+            _tracker?.Dispose();
+            _tracker = null;
+        }
     }
 
     public void Dispose()
     {
+        lock (_gate) _disposed = true;
         Pause();
         _query.Dispose();
     }

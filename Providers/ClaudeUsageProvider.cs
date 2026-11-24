@@ -16,23 +16,79 @@ namespace Glance.Providers;
 /// api.anthropic.com, and never stored, logged or refreshed here. Claude Code owns the sign-in:
 /// when the token expires, any Claude Code activity renews it and the widget picks it up.
 /// </summary>
-public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
+public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider, IManualCheck
 {
     private const string UsageUrl = "https://api.anthropic.com/api/oauth/usage";
     private const double WarningAt = 75;
     private const double CriticalAt = 90;
 
+    /// <summary>
+    /// The usage service is never asked more often than this, however often the widget is shown or
+    /// rebuilt. It rate limits callers that poll it, and the numbers barely move in three minutes anyway.
+    /// Only the "check now" button gets past it.
+    /// </summary>
+    public static readonly TimeSpan MinimumGap = TimeSpan.FromMinutes(3);
+
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
+    // Shared by every instance: the section is rebuilt whenever a setting changes, and that must not cost a request.
+    private static readonly object CacheGate = new();
+    private static string? _lastBody;
+    private static DateTimeOffset _lastFetched = DateTimeOffset.MinValue;
+    private static DateTimeOffset _backOffUntil = DateTimeOffset.MinValue;
+    private volatile bool _checkNow;
+
+    /// <summary>Lets the next fetch through even if the last one was less than three minutes ago.</summary>
+    public void CheckNow() => _checkNow = true;
+
     /// <param name="Key">Stable name used by claude.show and claude.labels: "session", "weekly_all", "weekly_fable".</param>
-    private sealed record Limit(string Key, string Label, double Percent, DateTimeOffset? ResetsAt);
+    /// <param name="Window">How long the limit's period is, when known. Needed to work out the pace.</param>
+    private sealed record Limit(string Key, string Label, double Percent, DateTimeOffset? ResetsAt, TimeSpan? Window);
+
+    private static readonly TimeSpan SessionWindow = TimeSpan.FromHours(5);
+    private static readonly TimeSpan WeekWindow = TimeSpan.FromDays(7);
 
     public string Title => "Claude";
 
-    public TimeSpan RefreshInterval => TimeSpan.FromSeconds(Math.Max(30, config.RefreshSeconds));
+    public TimeSpan RefreshInterval => TimeSpan.FromSeconds(Math.Max(MinimumGap.TotalSeconds, config.RefreshSeconds));
+    public TimeSpan BackgroundInterval => RefreshInterval;
+
+    // Showing the widget does not refetch readings that are still within the three minutes.
+    public TimeSpan FreshFor => MinimumGap;
+
+    /// <summary>
+    /// True when this PC has a Claude Code sign-in to read. Only checks that the file is there, not what is in it.
+    /// On a PC without Claude Code the section is simply left out.
+    /// </summary>
+    public static bool IsSignedIn(ClaudeConfig config) =>
+        // GLANCE_NO_CLAUDE is a hard off switch for test runs: with it set the sign-in is never looked at,
+        // whatever the settings say.
+        Environment.GetEnvironmentVariable("GLANCE_NO_CLAUDE") is null && File.Exists(CredentialsPath(config));
 
     public async Task<MetricSnapshot> FetchAsync(CancellationToken ct)
     {
+        var asked = _checkNow;
+        _checkNow = false;
+        var now = DateTimeOffset.Now;
+
+        lock (CacheGate)
+        {
+            // After a restart, pick up where the last run left off rather than asking again straight away.
+            if (_lastBody is null) RememberSavedResponse();
+
+            if (_lastBody is not null && !asked && now - _lastFetched < MinimumGap)
+                return Parse(_lastBody) with { AsOf = _lastFetched };
+
+            // Told to wait by the service: not even the button overrides that.
+            if (now < _backOffUntil)
+            {
+                var notice = $"Usage service is rate limiting. Next try at {_backOffUntil.ToLocalTime():t}.";
+                return _lastBody is null
+                    ? MetricSnapshot.Error(notice, _backOffUntil - now)
+                    : Parse(_lastBody) with { AsOf = _lastFetched, Notice = notice, RetryAfter = _backOffUntil - now };
+            }
+        }
+
         var (token, expiresAt, problem) = ReadToken();
         if (token is null) return MetricSnapshot.Error(problem!);
         if (expiresAt <= DateTimeOffset.UtcNow)
@@ -55,8 +111,19 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
                 return MetricSnapshot.Error("This Claude sign-in is not allowed to read plan usage.");
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMinutes(5);
-                return MetricSnapshot.Error("Usage service is rate limiting. Will retry shortly.", wait);
+                // Honour what the service asks for, and never retry sooner than ten minutes after being told off.
+                var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.Zero;
+                if (wait < TimeSpan.FromMinutes(10)) wait = TimeSpan.FromMinutes(10);
+                lock (CacheGate) _backOffUntil = DateTimeOffset.Now + wait;
+                Log.Write($"Claude usage service rate limited the request. Waiting until {_backOffUntil.ToLocalTime():t}.");
+
+                var notice = $"Usage service is rate limiting. Next try at {_backOffUntil.ToLocalTime():t}.";
+                lock (CacheGate)
+                {
+                    return _lastBody is null
+                        ? MetricSnapshot.Error(notice, wait)
+                        : Parse(_lastBody) with { AsOf = _lastFetched, Notice = notice, RetryAfter = wait };
+                }
             }
             if (!response.IsSuccessStatusCode)
             {
@@ -73,7 +140,14 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
             return MetricSnapshot.Error("Usage request timed out.");
         }
 
-        // Kept for troubleshooting limit names. Contains usage numbers only, no credentials.
+        lock (CacheGate)
+        {
+            _lastBody = body;
+            _lastFetched = DateTimeOffset.Now;
+        }
+
+        // Kept so the next start can carry on from it, and for troubleshooting limit names.
+        // Contains usage numbers only, no credentials.
         try
         {
             Directory.CreateDirectory(AppPaths.Home);
@@ -84,15 +158,32 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
         return Parse(body);
     }
 
+    // Called with CacheGate held. The saved file's timestamp is when it was fetched.
+    private static void RememberSavedResponse()
+    {
+        try
+        {
+            var file = new FileInfo(AppPaths.LastUsageFile);
+            if (!file.Exists || DateTimeOffset.Now - file.LastWriteTime >= MinimumGap) return;
+            _lastBody = File.ReadAllText(file.FullName);
+            _lastFetched = file.LastWriteTime;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
     /// <summary>Maps the usage response to rows. Internal so it can be exercised without a network call.</summary>
     internal MetricSnapshot Parse(string body)
     {
         List<Limit> limits;
+        List<MetricItem> sources;
         try
         {
             using var doc = JsonDocument.Parse(body);
             limits = ReadLimits(doc.RootElement);
             if (limits.Count == 0) limits = ReadLegacyBuckets(doc.RootElement);
+            sources = config.Breakdown ? ReadSources(doc.RootElement) : [];
         }
         catch (JsonException)
         {
@@ -107,18 +198,75 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
                 : "No usage limit matches claude.show in settings.");
         }
 
-        return new MetricSnapshot
+        var now = DateTimeOffset.Now;
+        var items = chosen.Select(l => new MetricItem(config.Labels.TryGetValue(l.Key, out var custom) && !string.IsNullOrWhiteSpace(custom) ? custom : l.Label)
         {
-            Items = chosen.Select(l => new MetricItem(config.Labels.TryGetValue(l.Key, out var custom) && !string.IsNullOrWhiteSpace(custom) ? custom : l.Label)
+            Key = l.Key,
+            Percent = Math.Clamp(l.Percent, 0, 100),
+            ValueText = Format.Percent(l.Percent),
+            Number = l.Percent,
+            Unit = "%",
+            ResetsAt = l.ResetsAt,
+            Detail = config.Pace ? Pace(l, now) : null,
+            Level = l.Percent >= CriticalAt ? MetricLevel.Critical
+                  : l.Percent >= WarningAt ? MetricLevel.Warning
+                  : MetricLevel.Normal,
+        }).ToList();
+        items.AddRange(sources);
+
+        return new MetricSnapshot { Items = items };
+    }
+
+    /// <summary>
+    /// Where the limit is heading if use carries on at the average rate so far this period:
+    /// either the moment it would run out, or the level it would reach by the reset.
+    /// </summary>
+    private static string? Pace(Limit limit, DateTimeOffset now)
+    {
+        if (limit.Window is not { } window || limit.ResetsAt is not { } resets) return null;
+        if (limit.Percent is <= 0 or >= 100) return null;
+
+        var start = resets - window;
+        var elapsed = now - start;
+        // In the first few percent of a period one burst of use would give a wild forecast.
+        if (elapsed < window * 0.05 || elapsed >= window) return null;
+
+        var atReset = limit.Percent * (window / elapsed);
+        if (atReset < 100) return $"on pace for {Format.Whole(atReset)}%";
+
+        var runsOut = start + elapsed * (100 / limit.Percent);
+        return $"runs out {TimeText.DayAndTime(runsOut, now)}";
+    }
+
+    // "seven_day_breakdown": { "rows": [ { "key": "claude_code", "display_name": "Claude Code", "percent": 99 }, ... ] }
+    // The share of this week's use that came from each place. Shown as small tiles under the limits.
+    private static List<MetricItem> ReadSources(JsonElement root)
+    {
+        var items = new List<MetricItem>();
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("seven_day_breakdown", out var breakdown) || breakdown.ValueKind != JsonValueKind.Object ||
+            !breakdown.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Array)
+        {
+            return items;
+        }
+
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object) continue;
+            if (!row.TryGetProperty("percent", out var share) || share.ValueKind != JsonValueKind.Number || share.GetDouble() < 1) continue;
+            if ((Text(row, "display_name") ?? Text(row, "key")) is not { Length: > 0 } name) continue;
+
+            // "Claude Code" becomes "From Code", which fits a half-width tile.
+            if (name.StartsWith("Claude ", StringComparison.OrdinalIgnoreCase)) name = name["Claude ".Length..];
+            items.Add(new MetricItem("From " + name)
             {
-                Percent = Math.Clamp(l.Percent, 0, 100),
-                ValueText = $"{Math.Round(l.Percent, MidpointRounding.AwayFromZero):0}%",
-                ResetsAt = l.ResetsAt,
-                Level = l.Percent >= CriticalAt ? MetricLevel.Critical
-                      : l.Percent >= WarningAt ? MetricLevel.Warning
-                      : MetricLevel.Normal,
-            }).ToList(),
-        };
+                Key = "from_" + Slug(Text(row, "key") ?? name),
+                ValueText = Format.Percent(share.GetDouble()),
+                Number = share.GetDouble(),
+                Unit = "%",
+            });
+        }
+        return items;
     }
 
     // The response carries a "limits" list, which is what the desktop app's usage page is drawn from:
@@ -148,7 +296,8 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
                 (_, not null) => ($"{group}_{Slug(scope)}", $"{(group == "weekly" ? "Week" : Pretty(group))}, {scope}"),
                 _ => (kind, Pretty(kind)),
             };
-            limits.Add(new Limit(key, label, percent.GetDouble(), Time(item)));
+            TimeSpan? window = group == "session" ? SessionWindow : group == "weekly" ? WeekWindow : null;
+            limits.Add(new Limit(key, label, percent.GetDouble(), Time(item), window));
         }
         return limits;
     }
@@ -176,7 +325,8 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
                     ("weekly_" + name[weekPrefix.Length..], "Week, " + Pretty(name[weekPrefix.Length..])),
                 _ => (name, Pretty(name)),
             };
-            limits.Add(new Limit(key, label, utilization.GetDouble(), Time(value)));
+            TimeSpan? window = name == "five_hour" ? SessionWindow : name.StartsWith("seven_day", StringComparison.Ordinal) ? WeekWindow : null;
+            limits.Add(new Limit(key, label, utilization.GetDouble(), Time(value), window));
         }
 
         static int Rank(string key) => key switch { "session" => 0, "weekly_all" => 1, _ => 2 };
@@ -232,7 +382,7 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
 
     private (string? Token, DateTimeOffset? ExpiresAt, string? Problem) ReadToken()
     {
-        var path = CredentialsPath();
+        var path = CredentialsPath(config);
         if (!File.Exists(path)) return (null, null, "Claude Code sign-in not found. Sign in to Claude Code first.");
 
         try
@@ -260,7 +410,7 @@ public sealed class ClaudeUsageProvider(ClaudeConfig config) : IMetricProvider
         }
     }
 
-    private string CredentialsPath()
+    private static string CredentialsPath(ClaudeConfig config)
     {
         if (!string.IsNullOrWhiteSpace(config.CredentialsPath))
             return Environment.ExpandEnvironmentVariables(config.CredentialsPath);

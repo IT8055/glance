@@ -9,9 +9,11 @@
     <!-- WinForms is only used for the tray icon and its menu. -->
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Drawn by tools\make-icon.ps1. -->
+    <ApplicationIcon>Glance.ico</ApplicationIcon>
     <AssemblyName>Glance</AssemblyName>
     <RootNamespace>Glance</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.4.0</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- DPI awareness is declared in app.manifest, which is the WPF way. The WinForms analyzer prefers its own API. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>

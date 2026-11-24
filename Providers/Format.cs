@@ -41,6 +41,16 @@ internal static class Format
     public static string Number(double value) =>
         value >= 100 ? value.ToString("0", Inv) : value.ToString("0.#", Inv);
 
+    /// <summary>A reading with as few digits as still mean something: "7.4", "41", "2550".</summary>
+    public static string Compact(double value) =>
+        Math.Abs(value) < 10 ? value.ToString("0.#", Inv) : Math.Round(value, MidpointRounding.AwayFromZero).ToString("0", Inv);
+
+    /// <summary>"41 °C", "88%": a percent sign sits against the number, other units get a space.</summary>
+    public static string WithUnit(double value, string unit) =>
+        unit.Length == 0 ? Compact(value) : unit == "%" ? Compact(value) + "%" : $"{Compact(value)} {unit}";
+
+    public static string Whole(double value) => Math.Round(value, MidpointRounding.AwayFromZero).ToString("0", Inv);
+
     private static (double Value, int Unit) Scale(double bytes)
     {
         var value = Math.Max(0, bytes);

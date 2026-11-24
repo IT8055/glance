@@ -45,7 +45,12 @@ internal sealed class EtwSession : IDisposable
         };
     }
 
-    public readonly record struct Provider(Guid Id, byte Level = 4, ulong Keywords = 0);
+    /// <param name="Optional">If Windows refuses this provider, carry on without it instead of failing the session.</param>
+    public readonly record struct Provider(Guid Id, byte Level = 4, ulong Keywords = 0, bool Optional = false);
+
+    /// <summary>The providers Windows actually let this session use.</summary>
+    public IReadOnlyList<Guid> Enabled => _enabled;
+    private readonly List<Guid> _enabled = [];
 
     /// <summary>True when running as administrator. Kernel providers, such as network traffic, need this.</summary>
     public static bool IsElevated()
@@ -103,8 +108,14 @@ internal sealed class EtwSession : IDisposable
         foreach (var provider in providers)
         {
             var status = EnableTraceEx2(_session, provider.Id, EnableProvider, provider.Level, provider.Keywords, 0, 0, IntPtr.Zero);
+            if (status == 0)
+            {
+                _enabled.Add(provider.Id);
+                continue;
+            }
+            if (provider.Optional) continue;
             if (status == AccessDenied) throw new UnauthorizedAccessException("Event tracing is not allowed for this account.");
-            if (status != 0) throw new InvalidOperationException($"Could not enable trace provider {provider.Id} (error {status}).");
+            throw new InvalidOperationException($"Could not enable trace provider {provider.Id} (error {status}).");
         }
 
         var logFile = Marshal.AllocHGlobal(LogFileSize);
@@ -192,6 +203,8 @@ internal sealed class EtwSession : IDisposable
     public static long ProviderLow(IntPtr record) => Marshal.ReadInt64(record, 24);
     public static long ProviderHigh(IntPtr record) => Marshal.ReadInt64(record, 32);
     public static int EventId(IntPtr record) => (ushort)Marshal.ReadInt16(record, 40);
+    public static int Opcode(IntPtr record) => Marshal.ReadByte(record, 45);
+    public static int Task(IntPtr record) => (ushort)Marshal.ReadInt16(record, 46);
     public static int DataLength(IntPtr record) => (ushort)Marshal.ReadInt16(record, 86);
     public static IntPtr Data(IntPtr record) => Marshal.ReadIntPtr(record, 96);
 

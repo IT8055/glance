@@ -7,6 +7,7 @@ namespace Glance.Providers;
 public sealed class SpecsProvider : IMetricProvider
 {
     public string Title => "This PC";
+    public string Id => "specs";
 
     // None of this changes while the PC is running.
     public TimeSpan RefreshInterval => TimeSpan.FromHours(6);

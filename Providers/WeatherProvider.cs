@@ -17,7 +17,9 @@ public sealed class WeatherProvider(WeatherConfig config) : IMetricProvider
     private static readonly HttpClient Http = CreateClient();
 
     public string Title => "Weather";
+    public string Id => "weather";
     public TimeSpan RefreshInterval => TimeSpan.FromMinutes(15);
+    public TimeSpan BackgroundInterval => TimeSpan.FromMinutes(15);
 
     // Conditions are published every 15 minutes, so showing the widget again does not need a new request.
     public TimeSpan FreshFor => TimeSpan.FromMinutes(5);
@@ -49,20 +51,28 @@ public sealed class WeatherProvider(WeatherConfig config) : IMetricProvider
             var degrees = config.Fahrenheit ? " °F" : " °C";
             var speed = config.Mph ? " mph" : " km/h";
 
+            MetricItem Reading(string label, string key, string field, string unit) => new(label)
+            {
+                Key = key,
+                ValueText = Whole(current, field) + unit,
+                Number = current.GetProperty(field).GetDouble(),
+                Unit = unit.Trim(),
+            };
+
             var items = new List<MetricItem>
             {
-                new("Now") { ValueText = Whole(current, "temperature_2m") + degrees },
-                new("Feels like") { ValueText = Whole(current, "apparent_temperature") + degrees },
-                new("Wind") { ValueText = Whole(current, "wind_speed_10m") + speed },
-                new("Humidity") { ValueText = Whole(current, "relative_humidity_2m") + "%" },
+                Reading("Now", "now", "temperature_2m", degrees),
+                Reading("Feels like", "feels", "apparent_temperature", degrees),
+                Reading("Wind", "wind", "wind_speed_10m", speed),
+                Reading("Humidity", "humidity", "relative_humidity_2m", "%"),
             };
 
             if (doc.RootElement.TryGetProperty("daily", out var daily))
             {
                 if (First(daily, "temperature_2m_min") is { } low && First(daily, "temperature_2m_max") is { } high)
-                    items.Add(new MetricItem("Today") { ValueText = $"{Round(low)} to {Round(high)}{degrees}" });
+                    items.Add(new MetricItem("Today") { Key = "today", ValueText = $"{Round(low)} to {Round(high)}{degrees}" });
                 if (First(daily, "precipitation_probability_max") is { } rain)
-                    items.Add(new MetricItem("Rain chance") { ValueText = Round(rain) + "%" });
+                    items.Add(new MetricItem("Rain chance") { Key = "rain", ValueText = Round(rain) + "%", Number = rain, Unit = "%" });
             }
 
             var conditions = current.TryGetProperty("weather_code", out var code) && code.TryGetInt32(out var wmo) ? Describe(wmo) : null;

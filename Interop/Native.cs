@@ -99,6 +99,23 @@ internal static class Native
     [DllImport("kernel32.dll")]
     public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX status);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus;       // 1 = on mains
+        public byte BatteryFlag;        // 8 = charging, 128 = no battery, 255 = unknown
+        public byte BatteryLifePercent; // 255 = unknown
+        public byte SystemStatusFlag;
+        public int BatteryLifeTime;     // seconds left, -1 = unknown
+        public int BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    public static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassNameW(IntPtr hWnd, System.Text.StringBuilder name, int max);
+
     [DllImport("user32.dll")]
     public static extern bool DestroyIcon(IntPtr hIcon);
 }
