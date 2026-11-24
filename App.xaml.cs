@@ -32,6 +32,7 @@ public partial class App : Application, ISettingsHost
     private SettingsWindow? _settings;
     private Mode _mode = Mode.Hidden;
     private bool _demo;
+    private List<List<string>> _demoColumns = [];
     private bool _recording;
     private bool _stoppingBenchmark;
     private bool _listEverything;
@@ -65,6 +66,9 @@ public partial class App : Application, ISettingsHost
         };
 
         _demo = e.Args.Contains("--demo");
+        // "--sections claude,fps;gpu" picks which sections the demo shows, with a semicolon between columns.
+        if (Argument(e.Args, "--sections") is { } picked)
+            _demoColumns = picked.Split(';').Select(c => c.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList()).ToList();
         var firstRun = !File.Exists(AppPaths.ConfigFile);
         _config = AppConfig.Load();
         if (firstRun) _config.Save();
@@ -103,7 +107,9 @@ public partial class App : Application, ISettingsHost
         _options.Ranges = _config.Ranges;
         _viewModel.Columns = _config.Columns;
 
-        _window = new OverlayWindow(_config) { DataContext = _viewModel };
+        // A run that only takes pictures stays off the screen and out of the tray.
+        var picture = e.Args.Any(a => a is "--snapshot" or "--record" or "--snapshot-settings");
+        _window = new OverlayWindow(_config) { DataContext = _viewModel, KeepOffScreen = picture };
         _window.HotKeyPressed += OnHotKey;
         _window.RefreshRequested += () => _host.RefreshNow();
         _window.MenuRequested += () => _tray?.ShowMenuAtCursor(_window.Handle);
@@ -124,7 +130,7 @@ public partial class App : Application, ISettingsHost
         _host = new MetricsHost(_viewModel.Sections, _options);
         _host.Fetched += OnFetched;
 
-        _tray = new Tray();
+        _tray = new Tray(visible: !picture);
         _tray.ToggleRequested += () => OnHotKey(OverlayWindow.ShowHide);
         _tray.CompactRequested += () => OnHotKey(OverlayWindow.CompactStrip);
         _tray.BenchmarkRequested += ToggleBenchmark;
@@ -172,6 +178,8 @@ public partial class App : Application, ISettingsHost
 
         if (Argument(e.Args, "--drag") is { } drags) _ = SimulateDrags(drags);
         if (snapshotPath is not null) _ = SnapshotThenExit(snapshotPath, seconds);
+        if (Argument(e.Args, "--record") is { } recordFolder)
+            _ = RecordThenExit(recordFolder, seconds, int.TryParse(Argument(e.Args, "--frames"), out var frames) ? frames : 10);
         if (settingsSnapshotPath is not null)
             _ = SnapshotSettingsThenExit(settingsSnapshotPath, int.TryParse(Argument(e.Args, "--tab"), out var tab) ? tab : 0);
         if (e.Args.Contains("--benchmark")) _ = BenchmarkThenExit(seconds);
@@ -200,8 +208,10 @@ public partial class App : Application, ISettingsHost
         if (_demo)
         {
             var demo = DemoProvider.All().ToList();
-            _host.SetProviders(demo, demo.Select(p => p.Id).ToList());
-            _viewModel.ProfileTitle = "DEMO";
+            var chosen = _demoColumns.Count > 0 ? _demoColumns.SelectMany(c => c).ToList() : demo.Select(p => p.Id).ToList();
+            _host.SetProviders(demo, chosen);
+            foreach (var section in _viewModel.Sections) section.Column = _demoColumns.FindIndex(c => c.Contains(section.Id));
+            _viewModel.ProfileTitle = _demoColumns.Count > 0 ? _config.Profile.ToUpperInvariant() : "DEMO";
             UpdateDemand();
             return;
         }
@@ -638,8 +648,21 @@ public partial class App : Application, ISettingsHost
     private async Task SnapshotThenExit(string path, int seconds)
     {
         // Long enough for sources that need two samples, a web request, or a graph worth looking at.
-        await Task.Delay(TimeSpan.FromSeconds(_demo ? Math.Min(seconds, 2) : seconds));
-        _window.SaveSnapshot(path);
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        _window.SaveSnapshot(path, transparent: Environment.GetCommandLineArgs().Contains("--transparent"));
+        Shutdown();
+    }
+
+    // Saves the widget as a numbered picture twice a second, for making an animation.
+    private async Task RecordThenExit(string folder, int seconds, int frames)
+    {
+        Directory.CreateDirectory(folder);
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        for (var i = 0; i < frames; i++)
+        {
+            _window.SaveSnapshot(Path.Combine(folder, $"{i:000}.png"), transparent: true);
+            await Task.Delay(500);
+        }
         Shutdown();
     }
 

@@ -1,223 +1,148 @@
-# Glance
+<p align="center"><img src="docs/images/icon.png" width="92" alt=""></p>
 
-A small always-on-top overlay for Windows 10 and 11. It stays hidden until you press a global shortcut, then sits above your other windows without taking keyboard focus. Showing it refreshes everything. While it is hidden, nothing is measured except what the tray icon and alerts need.
+<h1 align="center">Glance</h1>
 
-It detects the hardware of whatever PC it runs on, so the same exe can be handed to other people.
+<p align="center">
+  <b>Press a key to see how much Claude you have left and what your PC is up to.<br>Press it again and it's gone.</b>
+</p>
 
-## What it shows
+<p align="center">
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-6fb1ff">
+  <img alt="Claude usage built in" src="https://img.shields.io/badge/Claude%20usage-built%20in-d97757">
+  <img alt="One exe, no installer" src="https://img.shields.io/badge/one%20exe-no%20installer-5fd38d">
+  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-a78bfa">
+</p>
 
-Each block is a section. Profiles decide which sections appear and in what order.
+<p align="center"><img src="docs/images/glance.gif" width="900" alt="Pressing Ctrl+Alt+U brings up the Glance overlay, a second shortcut swaps it for a one-line strip, and pressing that again hides it."></p>
 
-| Section | Readings | Source |
-| --- | --- | --- |
-| Claude usage | Current session, week (all models), per-model weekly limits such as Fable, each with its reset time and a pace forecast. Where the week's use came from. | Your Claude Code sign-in |
-| FPS | Now, frame time, average and 1% low for the app in front | Windows frame events: Direct3D 9 to 12, OpenGL, Vulkan |
-| GPU | Load, VRAM, and on NVIDIA cards temperature, power, fan and clock | NVIDIA driver, or Windows counters for AMD and Intel |
-| GPU by app | Video memory and load of the five heaviest programs | Windows counters |
-| CPU | Load, a bar per thread, clock speed, power, plus temperature if a monitoring tool is running | Windows counters and energy meter, HWiNFO or MSI Afterburner |
-| CPU by app | The five programs using the most processor | Windows counters |
-| Power | Watts drawn by the CPU and the graphics card, an estimate for the whole PC, and optionally the share of your power supply in use and the cost per hour | Windows energy meter, NVIDIA driver, monitoring tools |
-| Memory | RAM in use, free, committed | Windows |
-| Memory by app | The five programs using the most memory | Windows counters |
-| Disk activity | Active time of the busiest disk, read and write speed | Windows counters |
-| I/O by app | The five programs reading and writing the most (files, network and devices together) | Windows counters |
-| Drive space | Free space per fixed drive | Windows |
-| Network | Download and upload, and how much of each is web (internet) and how much LAN (your local network) | Windows counters and socket events |
-| Network by app | The five programs sending and receiving the most, with the speed each way averaged over 5 seconds | Windows socket events |
-| Ping | Latency, average, jitter and packet loss to a host you choose | One ping per refresh |
-| Extra sensors | Any readings you pick from HWiNFO or MSI Afterburner: fans, voltages, drive temperatures | That tool's shared readings |
-| Battery | Charge, power source, time left. Only on PCs that have one. | Windows |
-| Weather | Temperature, feels like, wind, humidity, today's range, rain chance | Open-Meteo |
-| Benchmark | The timer while recording, then the last result | See Benchmarks below |
-| PC specs | CPU, GPUs, memory, display, Windows version | Windows |
+You're halfway through a long Claude session and you wonder if you're about to hit the limit. You're in a game and the fans have started to howl. Either way, finding out means leaving what you were doing.
 
-A section that cannot work on a PC (Claude usage without Claude Code, Battery on a desktop) is left out rather than showing an error.
+Glance is a small overlay for Windows that stays out of sight until you press **Ctrl+Alt+U**. It appears on top of everything, never takes the keyboard away from what you're using, and has fresh numbers every time. Press again and you're back to work.
 
-## Build and run
+## Your Claude usage, always one keypress away
 
-Needs the .NET 10 SDK.
+<img src="docs/images/claude.png" alt="The Claude panel: current session, weekly and per-model limits, each with a reset countdown and a pace forecast.">
+
+This is the reason Glance exists. It began as a way to stop opening the Claude app just to look at the usage page, and it's still the part we're proudest of.
+
+- **Every limit in one place:** your current session, your week, and weekly limits for single models such as Fable, each counting down to its reset.
+- **Will it last?** A forecast tells you where you're heading: "on pace for 76%", or the day and time you'll run out.
+- **Where it went:** how much of the week came from Claude Code, Cowork and the rest.
+- **A tap on the shoulder:** notifications as you pass 80% and 95% (or whatever you choose), and when a new session starts.
+- **In view while you work:** put your session percentage in the one-line strip, or as a live number in the icon by the clock.
+- **Polite:** it never asks more than once every 3 minutes, to stay well clear of rate limits. A refresh button is there when you can't wait.
+
+All you need is Claude Code signed in on the same PC. There's nothing to set up and no key to paste.
+
+## Then there's everything else
+
+<img src="docs/images/everything.png" alt="The full overlay with Claude, FPS, GPU, CPU, power, memory and network panels.">
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Is this game running well?
+
+FPS, frame time, average and 1% low, for Direct3D 9 to 12, OpenGL and Vulkan. Nothing is injected into the game. Hit a shortcut to record a benchmark and get a summary and every frame time as a CSV file afterwards.
+
+</td>
+<td width="50%"><img src="docs/images/games.png" alt="FPS, benchmark and GPU panels."></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/apps.png" alt="CPU, memory, GPU and network use by program."></td>
+<td width="50%" valign="top">
+
+### What's hogging my PC?
+
+The top five programs for processor, memory, graphics card, disk and network. Panels keep their size and the network list is averaged and held, so you can actually read it.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Who's using my internet, and what's this costing me?
+
+Traffic split into web and local network, and by program, without running as administrator. Power draw in watts for the CPU and graphics card, an estimate for the whole PC, and what it costs an hour to run.
+
+</td>
+<td width="50%"><img src="docs/images/network-power.png" alt="Network and power panels with graphs."></td>
+</tr>
+</table>
+
+There's also memory, drives, ping, battery, weather, your PC's specs, and any sensor you like from HWiNFO or MSI Afterburner. Turn on what you want and leave out the rest.
+
+## Make it yours
+
+<img src="docs/images/themes.png" alt="The same panel in nine colour schemes.">
+
+- **Nine colour schemes**, from Midnight to High contrast.
+- **Drag panels** wherever you like. Each profile remembers its own layout.
+- **Profiles** for work and play. Glance can switch by itself when a game goes full screen.
+- **Settings you can see and click**, with changes showing up as you make them.
+
+<img src="docs/images/settings.png" alt="The settings window, showing the Widget tab and the Tray and strip tab.">
+
+**Just want one line?** Press **Ctrl+Alt+Shift+U** for the compact strip and pick the readings that go in it.
+
+<img src="docs/images/strip.png" alt="The compact strip: FPS, GPU, CPU, network and Claude on one line.">
+
+**Got an OLED screen?** OLED mode nudges the overlay by one pixel at a time, too little to notice, so nothing stays lit in the same spot. The OLED black colours switch the background pixels off altogether.
+
+## Get it
+
+You need Windows 10 or 11 (64-bit) and the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). Then:
 
 ```powershell
-.\publish.ps1
-.\dist\Glance.exe
+git clone https://github.com/IT8055/widget.git
+cd widget
+powershell -ExecutionPolicy Bypass -File .\publish.ps1
+.\dist\share\Glance.exe
 ```
 
-`publish.ps1` makes two builds:
+That makes one file, `dist\share\Glance.exe`, that runs on any 64-bit Windows 10 or 11 PC with nothing installed. Copy it wherever you like, or hand it to a friend. It isn't signed, so Windows asks once: choose **More info**, then **Run anyway**.
 
-- `dist\Glance.exe`: small, needs the .NET 10 Desktop Runtime. Use this on your own PC.
-- `dist\share\Glance.exe`: about 70 MB with everything included. Runs on any 64-bit Windows 10 or 11 PC with nothing installed. Send this one to other people.
-
-The exes are not signed, so Windows SmartScreen warns the first time someone else runs one (More info, then Run anyway). The only fix is a bought code-signing certificate. Once you have one, `.\publish.ps1 -Sign <thumbprint>` signs both builds.
-
-The first launch shows the widget once so you can see it. After that it starts hidden.
-
-Preview the layout with made-up numbers (touches no account, network or hardware):
+Curious first? This shows the overlay with made-up numbers and touches nothing on your PC:
 
 ```powershell
-.\dist\Glance.exe --demo --show
+.\dist\share\Glance.exe --demo --show
 ```
 
-## Using it
+| Press | To |
+| --- | --- |
+| **Ctrl+Alt+U** | show or hide the overlay |
+| **Ctrl+Alt+Shift+U** | show or hide the one-line strip |
+| **Ctrl+Alt+Shift+B** | start or stop a benchmark |
+| **Ctrl+Alt+Shift+P** | switch profile |
 
-| Action | Default shortcut | Also |
+Change any of them in Settings (the gear on the overlay).
+
+## Private by design
+
+There's no account, no telemetry, and nothing phones home. Glance goes online for three things only, all of them yours to turn off:
+
+| What | Goes to | When |
 | --- | --- | --- |
-| Show or hide the widget | `Ctrl+Alt+U` | Left-click the icon near the clock |
-| Show or hide the compact strip | `Ctrl+Alt+Shift+U` | Right-click menu |
-| Start or stop a benchmark | `Ctrl+Alt+Shift+B` | Right-click menu |
-| Next profile | `Ctrl+Alt+Shift+P` | Right-click menu, Profile |
-| Settings | | Hover over the widget and click the gear, or double-click the icon near the clock |
-| Move | | Drag the widget, or pick a corner in Settings |
-| Refresh now | | Double-click the widget |
+| Claude usage | api.anthropic.com | If Claude Code is signed in and you use the Claude panel or alerts. The sign-in is read fresh each time and never stored, logged or sent anywhere else. |
+| Weather | open-meteo.com | Only after you pick a town. Rough coordinates, nothing more. |
+| Ping | the host you choose | Only while the ping panel is showing. |
 
-Starting `Glance.exe` while it is already running shows the widget, which makes a desktop shortcut work as a "show" button.
+While the overlay is hidden, nothing is measured except what your tray icon and alerts need.
 
-### Panels
+## Good to know
 
-Each section is a panel of its own. To rearrange them, drag a panel by the six dots beside its heading: a coloured line shows where it will land. Drop it between two panels, at the top or foot of another column, or past either side of the widget to start a new column. The arrangement is remembered per profile.
+- **FPS, the web/LAN split and Network by app** need a Windows permission (the Performance Log Users group). If you don't have it, Settings has a button that asks Windows for it.
+- **CPU temperature** needs HWiNFO or MSI Afterburner running, because Windows has no way to read it without a driver.
+- **NVIDIA cards** show everything. AMD and Intel show load and video memory, plus temperature and power from one of those tools.
+- **Games in exclusive full screen** draw over everything, Glance included. Borderless or windowed is fine.
+- **It's young.** It has been built and tested on one Windows 11 PC, with an AMD processor and an NVIDIA card. Windows 10, AMD and Intel graphics, laptop batteries, HWiNFO and Vulkan games are catered for but haven't had a proper run yet. If something looks wrong on yours, please [open an issue](https://github.com/IT8055/widget/issues) and attach `%APPDATA%\Glance\glance.log`.
 
-Until you drag one, Glance arranges the panels itself into the number of columns chosen in Settings, adding columns if they would not fit the height of the screen. Choosing a number of columns again hands the arranging back to Glance.
+## Want more detail?
 
-Dragging anywhere else on the widget, such as its title line or the gaps between panels, moves the whole widget.
+- **[The guide](docs/guide.md):** every panel, every setting, and exactly where each number comes from.
+- **[For developers](docs/development.md):** how it works, and how to add a panel of your own in about 20 lines.
 
-Panels keep their size while the widget is on screen. The lists of busiest programs always have room for five, with blank lines when fewer are busy, and a reading with no value for the moment shows a dash. A panel that has to grow (a message appearing, for example) does so once, and gives the space back when the widget is next hidden.
+---
 
-### Colours
-
-Settings, Widget, Colours switches between nine colour schemes: Midnight, Graphite, Ocean, Forest, Ember, Violet, Light, High contrast and OLED black. A scheme is one line in [Theme.cs](Theme.cs), so adding your own is easy.
-
-### OLED mode
-
-An OLED pixel dims a little with every hour it is lit, so anything that sits still for long enough (a label, a border, the end of a bar) can leave its outline behind. OLED monitors and TVs guard against this by shifting the whole picture by a pixel now and then. OLED mode, in Settings, Widget, does the same for the widget, which matters if you leave it or the compact strip on screen for hours.
-
-- **Each move is one pixel**, left, right, up or down, so it is not seen happening.
-- **How often:** every minute unless you choose every 30 seconds or every 3 minutes. Burn-in builds up over hundreds of hours, so what protects the screen is every position getting an equal share of the time in the long run, not speed. For comparison, Dell says its Alienware OLED monitors move the whole picture by one pixel roughly every three minutes ([Dell's note on pixel shift](https://www.dell.com/support/kbdoc/en-us/000197755/Alienware-34-Curved-Oled-Monitor-Aw3423dw-Pixel-Shift-Pixel-Orbiter)), and MSI's offer slow, normal and fast settings ([MSI on OLED Care](https://www.msi.com/blog/how-msi-oled-care-prevents-oled-from-burn-in)). The widget is small and often on screen briefly, so it goes a little faster.
-- **How far:** 8 pixels across and down unless you choose 4 or 12. The widget's thinnest details are one or two pixels wide and its bars a few pixels tall, so that is enough for no pixel to be lit all the time by a stroke or an edge. More would only make the movement visible.
-- **Where:** a widget pinned to a corner or edge only strays inwards, so it never slides off screen. One you placed by hand strays evenly around that spot, and dragging it sets a new spot.
-- **Evenly:** the path snakes through every position in its box and back, so each gets the same share. Where it is on the path comes from the clock, so hiding and showing the widget, or restarting Glance, carries on rather than starting again from the same spot.
-
-Moving protects fine detail. It cannot protect the middle of a large solid shape, which stays lit wherever the widget goes ([Rtings found the same](https://www.rtings.com/tv/learn/permanent-image-retention-burn-in-lcd-oled) for a large logo on a TV). The colours "OLED black" help there: black is a pixel switched off, which does not wear at all, and the text is kept below full brightness. Neither replaces the monitor's own protection. Leave that switched on.
-
-### Power
-
-The Power section adds up what can be measured: the CPU (from the energy meter built into Windows, or a monitoring tool) and the graphics card (from the NVIDIA driver, or a monitoring tool). Nothing in a desktop PC measures the rest, so "Whole PC" is an estimate: the measured watts, plus an allowance for the motherboard, memory, drives and fans, divided by the power supply's efficiency to give what is drawn at the wall. The allowance (50 W) and efficiency (90%) can be changed in Settings, Data. Give your power supply's size there to see how much of it is in use, and your electricity price to see the cost per hour. A laptop running on battery shows the drain on the battery instead, which is the whole machine, measured.
-
-### Claude usage and its limit
-
-The usage service rate limits callers that ask too often, so Glance never asks more than once every 3 minutes, however often the widget is shown or its settings changed. In between it shows the last answer, and says how old it is once that is over a minute and a half. Restarting Glance does not cost a request either: it carries on from the last saved answer.
-
-To check sooner, press the refresh button on the Claude panel (or "Check Claude usage now" in the right-click menu). If the service does rate limit, Glance waits at least 10 minutes before trying again and shows when that will be.
-
-### Compact strip
-
-One line of the readings you choose, for example `FPS 142  GPU 97% 64 °C  CPU 41%`. Only the sections those readings come from are measured while the strip is showing. Pick the readings and their order in Settings, Tray and strip.
-
-### Tray icon
-
-The icon near the clock can show one live reading as a number, coloured amber or red as it climbs: Claude session percentage, GPU temperature, FPS, whatever you pick in Settings. That reading stays measured while the widget is hidden (Claude usage every few minutes, hardware every couple of seconds).
-
-### Profiles
-
-A profile is a named, ordered set of sections. Glance starts with "Everyday" and "Gaming". Switch with the shortcut or the menu, or have Glance switch by itself while a full-screen app is in front and back again afterwards.
-
-### Graphs and ranges
-
-In Settings, Widget:
-
-- **Graphs** draws the last minute of load, temperature, frame rate, network and disk speed as a small line in place of the bar.
-- **Lowest and highest** adds the range seen for each of those readings. Reset it from the right-click menu.
-
-### Claude alerts
-
-A notification when a limit passes 80% and 95% (changeable), and when the session starts over. With alerts on, usage keeps being checked while the widget is hidden, at the interval set in Settings (never under 3 minutes).
-
-## Benchmarks
-
-Press the benchmark shortcut to start recording and again to stop. A red REC timer shows on the widget and strip. The widget can be hidden while it records.
-
-Glance records every frame time of the app in front, and once a second every hardware reading. When stopped it writes three files to `Documents\Glance benchmarks`:
-
-- `<date> <app>.txt`: the summary. Average, 1% low and 0.1% low frame rate, and the lowest, average and highest of every reading.
-- `<date> <app>.csv`: the readings, one line a second.
-- `<date> <app> frames.csv`: every frame time in milliseconds.
-
-"1% low" is the frame rate of the slowest 1% of frames: their average frame time turned back into frames per second.
-
-## Settings
-
-Everything in the settings window applies immediately. The tabs are Widget (colours, position, columns, size, opacity, graphs, OLED mode), Shortcuts (the four shortcuts and starting with Windows), Sections (profiles, which sections, their order), Tray and strip, and Data (update rates, monitoring tools, extra sensors, power figures, ping host, weather town).
-
-Settings are kept in `%APPDATA%\Glance\config.json`. Two options only exist there: `claude.show` (which limits to list, in order, with `*` wildcards, for example `["session", "weekly_fable"]`) and `claude.labels` (rename a limit, for example `{ "weekly_all": "This week" }`). Restart Glance after editing the file by hand.
-
-## What needs what
-
-Most sections work for any user on any PC. A few depend on the machine:
-
-- **FPS** needs permission to read Windows performance events: an administrator, or an account in the Performance Log Users group. If the account lacks it, the FPS section says so and Settings offers a button that adds the account to that group (Windows asks for approval, then sign out and back in).
-- **Web and LAN split, and Network by app** need the same permission as FPS, and nothing more: they do not need Glance to be run as administrator. Without the permission the Network section shows total download and upload. Three things to know about these figures:
-  - They count what programs send and receive through their own connections. Traffic that Windows carries itself, of which file sharing between PCs is the main example, appears in the totals but not in the split or against a program.
-  - A connection that was already open when the section started does not say where it leads, so its traffic is put down as web or LAN according to where most of that program's connections go.
-  - Traffic between programs on this PC itself is left out.
-- **Starting as administrator** was an option in versions 0.3 and 0.4, for the web and LAN split. It is no longer needed. If you switched it on, Settings, Shortcuts shows a button that puts Glance back to a normal start.
-- **CPU power** comes from the energy meter Windows provides for most recent Intel and AMD processors. Where there is none, it comes from a monitoring tool, as below.
-- **GPU temperature, power, fan and clock** come from the NVIDIA driver. On AMD and Intel graphics the section shows load and VRAM.
-- **CPU temperature** cannot be read by Windows without a hardware driver, so Glance borrows it from a monitoring tool if one is running:
-  - HWiNFO, with Shared Memory Support switched on in its settings.
-  - MSI Afterburner, with CPU temperature (and CPU power, if Windows has no energy meter for your processor) ticked on its Monitoring tab.
-  - CPU-Z is not supported: it has no interface other programs can read.
-- **The overlay itself** cannot draw over a game in exclusive full screen. Borderless or windowed full screen works.
-
-## Privacy
-
-- **Claude usage:** Glance reads the access token Claude Code keeps in `%USERPROFILE%\.claude\.credentials.json` and asks `https://api.anthropic.com/api/oauth/usage` for the figures that `/usage` shows. The token is read fresh for each request, sent only to api.anthropic.com, and never stored, logged or renewed by Glance. If it has expired the widget says so, and any Claude Code activity renews it. That endpoint is not documented by Anthropic and could change. The last response is saved to `%APPDATA%\Glance\last-usage.json` (usage numbers only) for troubleshooting.
-- **Weather:** nothing is sent until you pick a town. After that, only that town's coordinates, rounded to about a kilometre, go to open-meteo.com.
-- **Ping:** off until you add the section. It then pings the host you chose while the section is showing.
-- **Everything else** is read locally and goes nowhere.
-
-Errors are written to `%APPDATA%\Glance\glance.log`.
-
-## Adding a section
-
-Implement `IMetricProvider` (see [Core/Metrics.cs](Core/Metrics.cs)) and register it in [Sections.cs](Sections.cs): add a name to `All` and a line to `Create`. Each provider is one section. A reading is a `MetricItem`:
-
-- Give it a `Percent` and it is drawn as a row with a bar. Leave that out and it becomes a compact tile, two to a line.
-- Give it a `Key`, a `Number` and a `Unit` and it can be put in the tray icon and the compact strip, and is logged by benchmarks.
-- Set `Graph` and it gets a history graph and a lowest and highest range when those are switched on.
-- Keep the same readings from one fetch to the next, with `Format.Missing` as the text of one that has no value, so the panel does not change size. If the section is a list whose length varies, implement `ReservedRows`.
-
-```csharp
-public sealed class FanProvider : IMetricProvider
-{
-    public string Title => "Fans";
-    public string Id => "fans";
-    public TimeSpan RefreshInterval => TimeSpan.FromSeconds(2);
-
-    public Task<MetricSnapshot> FetchAsync(CancellationToken ct) =>
-        Task.FromResult(new MetricSnapshot
-        {
-            Subtitle = "case",
-            Items =
-            [
-                new MetricItem("Front") { Key = "front", Percent = 45, ValueText = "45%", Number = 45, Unit = "%", Graph = true, GraphMax = 100 },
-                new MetricItem("Rear") { Key = "rear", ValueText = "900 RPM", Number = 900, Unit = "RPM" },
-            ],
-        });
-}
-```
-
-`FetchAsync` runs on a worker thread and only while something wants the section. Implement `IDisposable` if the provider holds handles, and `IPausable` if it keeps something running between fetches that should stop when nothing wants it.
-
-## Development
-
-- `--demo`: made-up data instead of the real sources.
-- `--show` and `--compact`: start with the widget or the strip visible.
-- `--snapshot <file.png>` and `--snapshot-settings <file.png> --tab <n>`: render the widget or a settings tab to an image and exit. `--seconds <n>` sets how long to gather readings first.
-- `--probe <file.txt> --seconds <n>`: write what every section of the profile in use reads on this PC to a text file, with no window. Useful when a section misbehaves on someone else's machine.
-- `--probe-events <file.txt> --seconds <n>`: count graphics events per program, for when a game's frame rate is not being picked up.
-- `--probe-etw <file.txt> --seconds <n> --providers "name=GUID[:keywords];..." [--pid <n>]`: list the events any Windows event provider logs, with samples of their raw contents for one process. This is how the layout of the socket events behind the Network sections was worked out: send a known amount of data from a known process and find it in the events. `--key-bytes`, `--key-offset` and `--sum-offset` group that process's events by part of their contents and add up a field.
-- `--benchmark --seconds <n>`: record a benchmark of that length and exit.
-- `--drag "memory:350,0;disk:1200,50"`: move panels as if dragged by their handles to those points (measured within the area the panels sit in), logging what each move did. This is how panel dragging is tested without a mouse.
-- `--watch-layout <file.txt> --seconds <n>`: log every change in the size or place of any panel, then exit. With `--show`, this is how to check that panels stay steady.
-- `GLANCE_NO_CLAUDE`: set it and Glance never looks at the Claude Code sign-in, whatever the settings say. Use it for any test run.
-- `GLANCE_HOME`: environment variable that points Glance at a different settings folder. A copy started this way is a separate instance with its own event sessions, so it can run next to your normal one without disturbing it. Benchmarks then go to `benchmarks` inside that folder.
-- `GLANCE_NO_NVML`: set it to test the vendor-neutral GPU path on an NVIDIA machine.
-- `tools\make-icon.ps1` redraws `Glance.ico`.
+<sub>The pictures on this page were taken in Glance's demo mode, so every number and program name in them is made up. Glance is an independent project and is not made or endorsed by Anthropic. Claude is a trademark of Anthropic. The usage figures come from the same place as Claude Code's <code>/usage</code> command, which is not a documented service and could change.</sub>

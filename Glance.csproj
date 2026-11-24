@@ -13,7 +13,7 @@
     <ApplicationIcon>Glance.ico</ApplicationIcon>
     <AssemblyName>Glance</AssemblyName>
     <RootNamespace>Glance</RootNamespace>
-    <Version>0.5.3</Version>
+    <Version>0.5.4</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- DPI awareness is declared in app.manifest, which is the WPF way. The WinForms analyzer prefers its own API. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>

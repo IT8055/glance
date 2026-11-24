@@ -45,7 +45,8 @@ internal sealed class Tray : IDisposable
     public event Action? SettingsRequested;
     public event Action? ExitRequested;
 
-    public Tray()
+    /// <param name="visible">False to leave the icon out of the tray, for runs that only take a picture.</param>
+    public Tray(bool visible = true)
     {
         _toggle = new WF.ToolStripMenuItem("Show / hide", null, (_, _) => ToggleRequested?.Invoke());
         _compact = new WF.ToolStripMenuItem("Compact strip", null, (_, _) => CompactRequested?.Invoke());
@@ -85,7 +86,7 @@ internal sealed class Tray : IDisposable
             Icon = _current,
             Text = _baseTip,
             ContextMenuStrip = _menu,
-            Visible = true,
+            Visible = visible,
         };
         _icon.MouseClick += (_, e) =>
         {

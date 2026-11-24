@@ -66,7 +66,7 @@ public partial class OverlayWindow : Window
         // An anchored widget stays pinned to its corner as sections come and go.
         SizeChanged += (_, _) =>
         {
-            if (IsVisible && _config.Anchor != Anchors.Custom) Place();
+            if (IsVisible && (KeepOffScreen || _config.Anchor != Anchors.Custom)) Place();
         };
 
         // Create the native window now (still hidden) so the hotkey works before the first show.
@@ -74,6 +74,9 @@ public partial class OverlayWindow : Window
     }
 
     public IntPtr Handle => _hwnd;
+
+    /// <summary>Puts the widget where nobody can see it. It still lays itself out and can be photographed.</summary>
+    public bool KeepOffScreen { get; init; }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -120,7 +123,7 @@ public partial class OverlayWindow : Window
         Show();
         // Re-home the widget if this is the first show or its monitor has been unplugged since. In OLED mode it
         // is placed every time, because where it should sit has moved on while it was hidden.
-        if (!_placed || _config.Anchor != Anchors.Custom || _config.OledMode || !IsOnAMonitor()) Place();
+        if (KeepOffScreen || !_placed || _config.Anchor != Anchors.Custom || _config.OledMode || !IsOnAMonitor()) Place();
         AssertTopmost();
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, _config.Opacity, TimeSpan.FromMilliseconds(140)));
         _topmostTimer.Start();
@@ -234,6 +237,11 @@ public partial class OverlayWindow : Window
         _placed = true;
         UpdateLayout();
         if (!Native.GetWindowRect(_hwnd, out var rect)) return;
+        if (KeepOffScreen)
+        {
+            MoveTo(-20000, -20000);
+            return;
+        }
         var width = rect.Right - rect.Left;
         var height = rect.Bottom - rect.Top;
 
@@ -550,8 +558,10 @@ public partial class OverlayWindow : Window
         MenuRequested?.Invoke();
     }
 
-    /// <summary>Renders the widget to a PNG. Used by "--snapshot" for design checks.</summary>
-    public void SaveSnapshot(string path) => Snapshot.Save((FrameworkElement)Content, path, Color.FromRgb(0x4A, 0x5A, 0x6E), margin: 24);
+    /// <summary>Renders the widget to a PNG. Used by "--snapshot" and "--record" for design checks and pictures.</summary>
+    /// <param name="transparent">Leaves the background out instead of filling it with a plain colour.</param>
+    public void SaveSnapshot(string path, bool transparent = false) =>
+        Snapshot.Save((FrameworkElement)Content, path, transparent ? Colors.Transparent : Color.FromRgb(0x4A, 0x5A, 0x6E), margin: 24);
 }
 
 /// <summary>Renders a piece of UI to a PNG file without capturing the screen.</summary>
