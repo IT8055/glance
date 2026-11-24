@@ -13,6 +13,11 @@
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-a78bfa">
 </p>
 
+<p align="center">
+  <a href="https://github.com/IT8055/widget/releases/latest/download/Glance.exe"><img src="https://img.shields.io/badge/Download-Glance.exe-6fb1ff?style=for-the-badge" alt="Download Glance.exe"></a>
+  <a href="https://walker-jones.eu"><img src="https://img.shields.io/badge/Web%20page-walker--jones.eu-f2b04a?style=for-the-badge" alt="Web page: walker-jones.eu"></a>
+</p>
+
 <p align="center"><img src="docs/images/glance.gif" width="900" alt="Pressing Ctrl+Alt+U brings up the Glance overlay, a second shortcut swaps it for a one-line strip, and pressing that again hides it."></p>
 
 You're halfway through a long Claude session and you wonder if you're about to hit the limit. You're in a game and the fans have started to howl. Either way, finding out means leaving what you were doing.
