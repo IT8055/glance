@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/IT8055/widget/releases/latest/download/Glance.exe"><img src="https://img.shields.io/badge/Download-Glance.exe-6fb1ff?style=for-the-badge" alt="Download Glance.exe"></a>
+  <a href="https://github.com/IT8055/glance/releases/latest/download/Glance.exe"><img src="https://img.shields.io/badge/Download-Glance.exe-6fb1ff?style=for-the-badge" alt="Download Glance.exe"></a>
   <a href="https://walker-jones.eu"><img src="https://img.shields.io/badge/Web%20page-walker--jones.eu-f2b04a?style=for-the-badge" alt="Web page: walker-jones.eu"></a>
 </p>
 
@@ -97,7 +97,7 @@ There's also memory, drives, ping, battery, weather, your PC's specs, and any se
 
 ## Get it
 
-<p><a href="https://github.com/IT8055/widget/releases/latest/download/Glance.exe"><img src="https://img.shields.io/badge/Download-Glance.exe-6fb1ff?style=for-the-badge" alt="Download Glance.exe"></a> <a href="https://walker-jones.eu"><img src="https://img.shields.io/badge/Web%20page-walker--jones.eu-f2b04a?style=for-the-badge" alt="Web page: walker-jones.eu"></a></p>
+<p><a href="https://github.com/IT8055/glance/releases/latest/download/Glance.exe"><img src="https://img.shields.io/badge/Download-Glance.exe-6fb1ff?style=for-the-badge" alt="Download Glance.exe"></a> <a href="https://walker-jones.eu"><img src="https://img.shields.io/badge/Web%20page-walker--jones.eu-f2b04a?style=for-the-badge" alt="Web page: walker-jones.eu"></a></p>
 
 One file of about 66 MB for 64-bit Windows 10 and 11, with nothing to install. Put it anywhere and run it. It isn't signed, so Windows asks once: choose **More info**, then **Run anyway**. Settings, About has a button that checks for newer versions.
 
@@ -107,8 +107,8 @@ One file of about 66 MB for 64-bit Windows 10 and 11, with nothing to install. P
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). This makes the same program as the download, in `dist\share`:
 
 ```powershell
-git clone https://github.com/IT8055/widget.git
-cd widget
+git clone https://github.com/IT8055/glance.git
+cd glance
 powershell -ExecutionPolicy Bypass -File .\publish.ps1
 .\dist\share\Glance.exe
 ```
@@ -149,7 +149,7 @@ While the overlay is hidden, nothing is measured except what your tray icon and 
 - **CPU temperature** needs HWiNFO or MSI Afterburner running, because Windows has no way to read it without a driver.
 - **NVIDIA cards** show everything. AMD and Intel show load and video memory, plus temperature and power from one of those tools.
 - **Games in exclusive full screen** draw over everything, Glance included. Borderless or windowed is fine.
-- **It's young.** It has been built and tested on one Windows 11 PC, with an AMD processor and an NVIDIA card. Windows 10, AMD and Intel graphics, laptop batteries, HWiNFO and Vulkan games are catered for but haven't had a proper run yet. If something looks wrong on yours, please [open an issue](https://github.com/IT8055/widget/issues) and attach `%APPDATA%\Glance\glance.log`.
+- **It's young.** It has been built and tested on one Windows 11 PC, with an AMD processor and an NVIDIA card. Windows 10, AMD and Intel graphics, laptop batteries, HWiNFO and Vulkan games are catered for but haven't had a proper run yet. If something looks wrong on yours, please [open an issue](https://github.com/IT8055/glance/issues) and attach `%APPDATA%\Glance\glance.log`.
 
 ## Want more detail?
 

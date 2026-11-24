@@ -9,7 +9,7 @@ internal static class About
 {
     public const string Author = "Gary Walker-Jones";
     public const string WebPage = "https://walker-jones.eu";
-    public const string Repository = "https://github.com/IT8055/widget";
+    public const string Repository = "https://github.com/IT8055/glance";
     public const string Issues = Repository + "/issues";
 
     /// <summary>Empty leaves the line out.</summary>
@@ -22,7 +22,7 @@ internal static class About
 /// </summary>
 internal static class UpdateCheck
 {
-    private const string Latest = "https://api.github.com/repos/IT8055/widget/releases/latest";
+    private const string Latest = "https://api.github.com/repos/IT8055/glance/releases/latest";
     private const string ReleasesPage = About.Repository + "/releases";
 
     private static readonly HttpClient Http = CreateClient();
