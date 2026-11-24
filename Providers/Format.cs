@@ -5,6 +5,9 @@ namespace Glance.Providers;
 /// <summary>Number formatting shared by the hardware sections. Always uses a full stop as the decimal mark.</summary>
 internal static class Format
 {
+    /// <summary>Stands in for a value that is not there at the moment, so its place is kept.</summary>
+    public const string Missing = "–";
+
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     private static readonly string[] Units = ["B", "KB", "MB", "GB", "TB", "PB"];
 

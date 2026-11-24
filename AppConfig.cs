@@ -13,6 +13,15 @@ internal static class AppPaths
     public static string Home { get; } =
         Custom ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Glance");
 
+    /// <summary>
+    /// Empty for the normal settings folder, and a short tag that differs for every other one. Whatever is
+    /// shared across the PC by name (the single-copy lock, trace sessions) carries it, so a second copy of
+    /// Glance started with its own settings folder never takes over anything belonging to the first.
+    /// </summary>
+    public static string InstanceTag { get; } = Custom is null
+        ? ""
+        : "." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Custom.ToLowerInvariant())), 0, 8);
+
     public static string ConfigFile => Path.Combine(Home, "config.json");
     public static string LogFile => Path.Combine(Home, "glance.log");
     public static string LastUsageFile => Path.Combine(Home, "last-usage.json");
@@ -111,6 +120,22 @@ public sealed class SystemConfig
     public bool? Specs { get; set; }
 }
 
+/// <summary>The assumptions behind the Power panel's estimate of what the whole PC draws.</summary>
+public sealed class PowerConfig
+{
+    /// <summary>Allowance in watts for everything that cannot be measured: motherboard, memory, drives, fans.</summary>
+    public double RestWatts { get; set; } = 50;
+
+    /// <summary>How efficient the power supply is taken to be, in percent. Most modern supplies are 85 to 94.</summary>
+    public double Efficiency { get; set; } = 90;
+
+    /// <summary>Rated size of the power supply in watts. With it set, the panel shows how loaded the supply is. 0 if unknown.</summary>
+    public double SupplyWatts { get; set; }
+
+    /// <summary>What a kilowatt-hour costs, in the PC's own currency. With it set, the panel shows the cost per hour. 0 to leave that out.</summary>
+    public double PricePerKwh { get; set; }
+}
+
 public sealed class WeatherConfig
 {
     /// <summary>The chosen place, as shown in Settings. Empty until the user picks one.</summary>
@@ -203,7 +228,7 @@ public sealed class AppConfig
     public const string DefaultHotkey = "Ctrl+Alt+U";
 
     // Raised when a new version needs to adjust settings saved by an older one.
-    private const int CurrentVersion = 4;
+    private const int CurrentVersion = 5;
 
     /// <summary>Which version of Glance's settings layout this file was last saved with.</summary>
     public int Version { get; set; }
@@ -263,6 +288,18 @@ public sealed class AppConfig
     public int? X { get; set; }
     public int? Y { get; set; }
 
+    /// <summary>
+    /// OLED mode: while the widget is on screen, move it a pixel at a time so nothing stays lit in one place.
+    /// See <see cref="PixelShift"/>.
+    /// </summary>
+    public bool OledMode { get; set; }
+
+    /// <summary>Seconds between one-pixel moves in OLED mode.</summary>
+    public int OledMoveSeconds { get; set; } = PixelShift.DefaultSeconds;
+
+    /// <summary>How many pixels the widget may stray, across and down, in OLED mode.</summary>
+    public int OledTravel { get; set; } = PixelShift.DefaultTravel;
+
     /// <summary>Draw a graph of the last minute for load, temperature and frame rate readings.</summary>
     public bool Graphs { get; set; }
 
@@ -289,6 +326,8 @@ public sealed class AppConfig
     public SystemConfig Hardware { get; set; } = new();
 
     public WeatherConfig Weather { get; set; } = new();
+
+    public PowerConfig Power { get; set; } = new();
 
     [JsonIgnore]
     public ProfileConfig ActiveProfile => Profiles.FirstOrDefault(p => p.Name == Profile) ?? Profiles[0];
@@ -334,6 +373,8 @@ public sealed class AppConfig
         Opacity = double.IsFinite(Opacity) ? Math.Clamp(Opacity, 0.2, 1.0) : 0.96;
         Scale = double.IsFinite(Scale) ? Math.Clamp(Scale, 0.7, 1.6) : 1.0;
         Columns = Math.Clamp(Columns, 1, 4);
+        OledMoveSeconds = Math.Clamp(OledMoveSeconds, 1, 3600);
+        OledTravel = Math.Clamp(OledTravel, 2, 24);
         Theme = Themes.Find(Theme).Name;
 
         // Settings saved before anchors existed have a dragged position and no anchor: keep that position.
@@ -342,6 +383,12 @@ public sealed class AppConfig
 
         Weather ??= new WeatherConfig();
         Weather.Place ??= "";
+
+        Power ??= new PowerConfig();
+        Power.RestWatts = double.IsFinite(Power.RestWatts) ? Math.Clamp(Power.RestWatts, 0, 1000) : 50;
+        Power.Efficiency = double.IsFinite(Power.Efficiency) ? Math.Clamp(Power.Efficiency, 50, 100) : 90;
+        Power.SupplyWatts = double.IsFinite(Power.SupplyWatts) ? Math.Clamp(Power.SupplyWatts, 0, 5000) : 0;
+        Power.PricePerKwh = double.IsFinite(Power.PricePerKwh) ? Math.Max(0, Power.PricePerKwh) : 0;
 
         Claude ??= new ClaudeConfig();
         Claude.Show ??= [];
@@ -379,11 +426,13 @@ public sealed class AppConfig
             Add("gpuapps", Hardware.Gpu);
             Add("cpu", Hardware.Cpu);
             Add("cpuapps", Hardware.Cpu);
+            Add("power", Hardware.Cpu);
             Add("memory", Hardware.Memory);
             Add("memoryapps", Hardware.Memory);
             Add("disk", Hardware.Disk);
             Add("drives", Hardware.Drives);
             Add("network", Hardware.Network);
+            Add("netapps", Hardware.Network);
             Add("battery", null);
             Add("weather", Weather.Enabled);
             Add("specs", Hardware.Specs, otherwise: false);
@@ -414,6 +463,19 @@ public sealed class AppConfig
                     var at = profile.Sections.IndexOf(parent);
                     if (at >= 0 && !profile.Sections.Contains(child)) profile.Sections.Insert(at + 1, child);
                 }
+            }
+
+            // Version 5 added the Power and Network by app panels. They go into the profile in use, next to
+            // the panels they belong with.
+            if (Version < 5 && profile.Name == Profile)
+            {
+                if (!profile.Sections.Contains("power") && (profile.Sections.Contains("cpu") || profile.Sections.Contains("gpu")))
+                {
+                    var after = new[] { "cpuapps", "cpu", "gpuapps", "gpu" }.Select(id => profile.Sections.IndexOf(id)).First(index => index >= 0);
+                    profile.Sections.Insert(after + 1, "power");
+                }
+                if (!profile.Sections.Contains("netapps") && profile.Sections.IndexOf("network") is var network and >= 0)
+                    profile.Sections.Insert(network + 1, "netapps");
             }
 
             // A hand-edited or outdated arrangement is brought back in line with the section list.

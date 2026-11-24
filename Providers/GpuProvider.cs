@@ -210,6 +210,7 @@ public sealed class GpuAppsProvider : IMetricProvider, IDisposable
     public string Title => "GPU by app";
     public string Id => "gpuapps";
     public TimeSpan RefreshInterval { get; }
+    public int ReservedRows => Shown;
 
     public async Task<MetricSnapshot> FetchAsync(CancellationToken ct)
     {

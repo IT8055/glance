@@ -79,11 +79,11 @@ public sealed class BatteryProvider : IMetricProvider
             new("Power") { Key = "source", ValueText = charging ? "Charging" : onMains ? "Plugged in" : "On battery" },
         };
         // Windows reports -1 while plugged in or while it is still working the estimate out.
-        if (!onMains && status.BatteryLifeTime is > 0 and var seconds)
+        TimeSpan? left = !onMains && status.BatteryLifeTime is > 0 and var seconds ? TimeSpan.FromSeconds(seconds) : null;
+        items.Add(new MetricItem("Time left")
         {
-            var left = TimeSpan.FromSeconds(seconds);
-            items.Add(new MetricItem("Time left") { Key = "left", ValueText = $"{(int)left.TotalHours}h {left.Minutes}m", Number = left.TotalMinutes, Unit = "min" });
-        }
+            Key = "left", ValueText = left is { } t ? $"{(int)t.TotalHours}h {t.Minutes}m" : Format.Missing, Number = left?.TotalMinutes, Unit = "min",
+        });
 
         return Task.FromResult(new MetricSnapshot { Items = items });
     }

@@ -110,6 +110,12 @@ public interface IMetricProvider
     string Id => MetricItem.Slug(Title);
 
     /// <summary>
+    /// For a list whose length changes from moment to moment (the busiest programs): how many rows it can
+    /// have. The panel always takes up that many, so it never changes size. Zero for anything else.
+    /// </summary>
+    int ReservedRows => 0;
+
+    /// <summary>
     /// Showing the widget refreshes every section, except ones fetched more recently than this.
     /// Raise it for slow-changing data behind a web service that should not be called on every show.
     /// </summary>

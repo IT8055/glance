@@ -51,20 +51,27 @@ public sealed class MetricsHost : IDisposable
 
     public T? Provider<T>() where T : class, IMetricProvider => _entries.Select(e => e.Provider).OfType<T>().FirstOrDefault();
 
+    /// <summary>
+    /// Replaces everything being run. A section that was already there keeps its panel, readings and all,
+    /// until its new source answers, so changing a setting does not make the widget go blank and fill up again.
+    /// </summary>
     /// <param name="providers">Everything to run.</param>
     /// <param name="shownIds">Names of the sections to draw in the widget, in display order.</param>
     public void SetProviders(IEnumerable<IMetricProvider> providers, IReadOnlyList<string> shownIds)
     {
+        var before = _entries.Select(e => e.Section).ToList();
         Release();
         _cts = new CancellationTokenSource();
-        _entries = providers
-            .Select(p => new Entry(p, new SectionViewModel(p.Id, p.Title, _options) { CanCheckNow = p is IManualCheck }))
-            .ToList();
+        _entries = providers.Select(p => new Entry(p, SectionFor(p, before))).ToList();
 
-        _shown.Clear();
-        foreach (var id in shownIds)
+        var shown = shownIds
+            .Select(id => _entries.FirstOrDefault(e => e.Provider.Id == id)?.Section)
+            .OfType<SectionViewModel>()
+            .ToList();
+        if (!_shown.SequenceEqual(shown))
         {
-            if (_entries.FirstOrDefault(e => e.Provider.Id == id) is { } entry) _shown.Add(entry.Section);
+            _shown.Clear();
+            foreach (var section in shown) _shown.Add(section);
         }
 
         // Nothing runs until SetDemand says what is wanted. The demand from before the rebuild may
@@ -120,16 +127,29 @@ public sealed class MetricsHost : IDisposable
     }
 
     /// <summary>Redraws every section from its last reading, after a display option (graphs, ranges) changed.</summary>
-    public void Redraw()
+    /// <param name="resized">True if the option changes how big the panels are.</param>
+    public void Redraw(bool resized)
     {
         var now = DateTimeOffset.Now;
-        foreach (var entry in _entries) entry.Section.Reapply(now);
+        foreach (var entry in _entries) entry.Section.Reapply(now, resized);
     }
 
     public void Dispose()
     {
         _timer.Stop();
         Release();
+    }
+
+    private SectionViewModel SectionFor(IMetricProvider provider, List<SectionViewModel> before)
+    {
+        var canCheckNow = provider is IManualCheck;
+        var kept = before.FirstOrDefault(s => s.Id == provider.Id && s.Title == provider.Title &&
+            s.ReservedRows == provider.ReservedRows && s.CanCheckNow == canCheckNow);
+        if (kept is null) return new SectionViewModel(provider.Id, provider.Title, _options, provider.ReservedRows) { CanCheckNow = canCheckNow };
+
+        before.Remove(kept);
+        kept.Renew();
+        return kept;
     }
 
     private bool IsLive(Entry entry) => _everythingLive || _live.Contains(entry.Provider.Id);

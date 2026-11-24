@@ -6,8 +6,8 @@ namespace Glance.Providers;
 
 /// <summary>
 /// Processor load, a bar per thread, and the effective clock speed, from Windows performance counters.
-/// Temperature and power are added when HWiNFO or MSI Afterburner is running, since Windows has no
-/// driver-free way to read them.
+/// Power comes from Windows' energy meter on PCs that have one. Temperature (and power elsewhere) is
+/// added when HWiNFO or MSI Afterburner is running, since Windows has no driver-free way to read it.
 /// </summary>
 public sealed class CpuProvider : IMetricProvider, IDisposable
 {
@@ -17,6 +17,7 @@ public sealed class CpuProvider : IMetricProvider, IDisposable
     private readonly IntPtr _cores;
     private readonly IntPtr _performance;
     private readonly IntPtr _frequency;
+    private readonly IntPtr _meters;
 
     /// <param name="threadBars">Show a small bar for every thread instead of just naming the busiest.</param>
     public CpuProvider(TimeSpan interval, bool threadBars)
@@ -34,6 +35,7 @@ public sealed class CpuProvider : IMetricProvider, IDisposable
         }
         _performance = _query.Add(@"\Processor Information(_Total)\% Processor Performance");
         _frequency = _query.Add(@"\Processor Information(_Total)\Processor Frequency");
+        _meters = _query.Add(PowerProvider.EnergyMeterCounter);
     }
 
     public string Title => "CPU";
@@ -83,7 +85,8 @@ public sealed class CpuProvider : IMetricProvider, IDisposable
                 Level = temperature >= 95 ? MetricLevel.Critical : temperature >= 85 ? MetricLevel.Warning : MetricLevel.Normal,
             });
         }
-        if (sensors.CpuPower is { } power)
+        // Windows' own energy meter where the PC has one, otherwise whatever a monitoring tool reports.
+        if ((PowerProvider.PackageWatts(_query, _meters) ?? sensors.CpuPower) is { } power)
             items.Add(new MetricItem("Power") { Key = "power", ValueText = Format.Whole(power) + " W", Number = power, Unit = "W", Graph = true });
 
         return new MetricSnapshot { Items = items, Subtitle = Machine.CpuName };

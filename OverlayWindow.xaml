@@ -109,6 +109,19 @@
             </StackPanel>
         </DataTemplate>
 
+        <!-- A message in a panel. One about a problem is in the warning colour. -->
+        <Style x:Key="NoticeText" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource DimBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding NoticeIsError}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- A small button in a panel's heading line. -->
         <Style x:Key="HeaderButton" TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
@@ -134,6 +147,7 @@
 
         <!-- One section: a bordered panel with a heading line, then its readings. -->
         <DataTemplate DataType="{x:Type local:SectionViewModel}">
+            <local:SteadyBox HoldHeight="True" Epoch="{Binding Epoch}">
             <Border CornerRadius="10" Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1" Padding="12,9,12,0">
                 <StackPanel>
@@ -160,7 +174,12 @@
                         <TextBlock Text="{Binding Subtitle}" Margin="8,0,8,0" VerticalAlignment="Center"
                                    Foreground="{DynamicResource DimBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                     </DockPanel>
-                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource Row}" Focusable="False"/>
+                    <Grid>
+                        <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource Row}" Focusable="False"/>
+                        <!-- A list with nothing in it says so on top of its blank rows, so it stays the same size. -->
+                        <TextBlock Text="{Binding ListNotice}" Style="{StaticResource NoticeText}" VerticalAlignment="Top"
+                                   Visibility="{Binding HasListNotice, Converter={StaticResource Vis}}"/>
+                    </Grid>
                     <!-- The negative margin cancels the right-hand gap of the second tile on each line. -->
                     <ItemsControl ItemsSource="{Binding Tiles}" ItemTemplate="{StaticResource Tile}" Focusable="False"
                                   Margin="0,0,-16,4" Visibility="{Binding HasTiles, Converter={StaticResource Vis}}">
@@ -170,40 +189,32 @@
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
-                    <TextBlock Text="{Binding Notice}" Margin="0,0,0,12" FontSize="11" TextWrapping="Wrap"
-                               Visibility="{Binding HasNotice, Converter={StaticResource Vis}}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{DynamicResource DimBrush}"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding NoticeIsError}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <TextBlock Text="{Binding Notice}" Style="{StaticResource NoticeText}"
+                               Visibility="{Binding HasNotice, Converter={StaticResource Vis}}"/>
                 </StackPanel>
             </Border>
+            </local:SteadyBox>
         </DataTemplate>
 
         <!-- One value in the compact strip, coloured by its level. -->
         <DataTemplate DataType="{x:Type local:StripValue}">
-            <TextBlock Text="{Binding Text}" Margin="0,0,7,0" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Foreground" Value="{DynamicResource ValueBrush}"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Level}" Value="Warning">
-                                <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding Level}" Value="Critical">
-                                <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+            <local:SteadyBox HoldWidth="True" Margin="0,0,7,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Text}" FontSize="13" FontWeight="SemiBold">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource ValueBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Level}" Value="Critical">
+                                    <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </local:SteadyBox>
         </DataTemplate>
 
         <!-- One section's part of the compact strip: "GPU 97% 64 °C". -->
@@ -282,12 +293,13 @@
                         <ItemsControl x:Name="SectionsHost" ItemsSource="{Binding Sections}" Focusable="False">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <local:ColumnsPanel Columns="{Binding Columns}" MaxColumnHeight="{Binding MaxColumnHeight}"/>
+                                    <local:ColumnsPanel Columns="{Binding Columns}" MaxColumnHeight="{Binding MaxColumnHeight}" Epoch="{Binding LayoutEpoch}"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemContainerStyle>
                                 <Style TargetType="ContentPresenter">
                                     <Setter Property="local:ColumnsPanel.Column" Value="{Binding Column}"/>
+                                    <Setter Property="local:ColumnsPanel.Settled" Value="{Binding HasReported}"/>
                                 </Style>
                             </ItemsControl.ItemContainerStyle>
                         </ItemsControl>

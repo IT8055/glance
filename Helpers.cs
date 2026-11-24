@@ -43,9 +43,9 @@ internal sealed class UsageAlerts
 }
 
 /// <summary>
-/// Starting Glance as administrator when you sign in, which is what the web and LAN traffic split needs.
-/// Windows only starts a program elevated without asking each time if a scheduled task says so, and
-/// creating that task takes one administrator approval.
+/// Version 0.3 and 0.4 could set Glance up to start as administrator at sign-in, through a scheduled
+/// task, because the web and LAN traffic split needed it then. It no longer does, so all that is left
+/// here is spotting that task and taking it away again.
 /// </summary>
 internal static class AdminStart
 {
@@ -70,22 +70,10 @@ internal static class AdminStart
         }
     }
 
-    /// <summary>Creates or removes the task. Windows asks for approval. Returns false if that was declined or failed.</summary>
-    public static bool Set(bool enabled)
+    /// <summary>Removes the task. Windows asks for approval. Returns false if that was declined or failed.</summary>
+    public static bool Remove()
     {
-        static string Quote(string text) => "'" + text.Replace("'", "''") + "'";
-
-        var task = Quote(TaskName);
-        var script = enabled
-            ? $"""
-               $user = {Quote(WindowsIdentity.GetCurrent().Name)}
-               $action = New-ScheduledTaskAction -Execute {Quote(Environment.ProcessPath ?? "")}
-               $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
-               $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
-               $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
-               Register-ScheduledTask -TaskName {task} -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
-               """
-            : $"Unregister-ScheduledTask -TaskName {task} -Confirm:$false -ErrorAction Stop";
+        var script = $"Unregister-ScheduledTask -TaskName '{TaskName}' -Confirm:$false -ErrorAction Stop";
 
         try
         {
@@ -103,20 +91,6 @@ internal static class AdminStart
         catch (Win32Exception)
         {
             return false; // approval declined
-        }
-    }
-
-    /// <summary>Starts a second, elevated copy that takes over once this one has exited. False if approval was declined.</summary>
-    public static bool RestartElevated()
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(Environment.ProcessPath ?? "", "--restart") { UseShellExecute = true, Verb = "runas" });
-            return true;
-        }
-        catch (Win32Exception)
-        {
-            return false;
         }
     }
 }
@@ -171,7 +145,4 @@ internal interface ISettingsHost
     IReadOnlyList<(string Key, string Name)> Readings();
 
     void OpenBenchmarksFolder();
-
-    /// <summary>Exits so an elevated copy can take over.</summary>
-    void Quit();
 }

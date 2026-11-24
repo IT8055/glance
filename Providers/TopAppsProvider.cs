@@ -37,6 +37,7 @@ public sealed partial class TopAppsProvider : IMetricProvider, IDisposable
     public string Title => _kind switch { Kind.Cpu => "CPU by app", Kind.Memory => "Memory by app", _ => "I/O by app" };
     public string Id => _kind switch { Kind.Cpu => "cpuapps", Kind.Memory => "memoryapps", _ => "ioapps" };
     public TimeSpan RefreshInterval { get; }
+    public int ReservedRows => Shown;
 
     public async Task<MetricSnapshot> FetchAsync(CancellationToken ct)
     {

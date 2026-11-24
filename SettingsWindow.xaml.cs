@@ -68,6 +68,14 @@ public partial class SettingsWindow : Window
             new("Every 3 minutes", 180), new("Every 5 minutes", 300), new("Every 10 minutes", 600),
             new("Every 15 minutes", 900), new("Every 30 minutes", 1800),
         };
+        OledRate.ItemsSource = new List<Choice>
+        {
+            new("every 30 seconds", 30), new("every minute", 60), new("every 3 minutes", 180),
+        };
+        OledTravel.ItemsSource = new List<Choice>
+        {
+            new("4 pixels", 4), new("8 pixels", 8), new("12 pixels", 12),
+        };
         ThemeBox.ItemsSource = Themes.All.Select(t => t.Name).ToList();
         SectionList.ItemsSource = _sections;
         StripList.ItemsSource = _strip;
@@ -102,12 +110,16 @@ public partial class SettingsWindow : Window
             Ranges.IsChecked = _config.Ranges;
             ThreadBars.IsChecked = _config.Hardware.ThreadBars;
             ClickThrough.IsChecked = _config.ClickThrough;
+            OledMode.IsChecked = _config.OledMode;
+            OledRate.SelectedValue = Nearest(OledRate, _config.OledMoveSeconds);
+            OledTravel.SelectedValue = Nearest(OledTravel, _config.OledTravel);
+            OledOptions.IsEnabled = _config.OledMode;
 
             foreach (var (button, slot) in ShortcutButtons()) button.Content = Shown(ShortcutOf(slot));
             if (_recording is null) HotkeyHint.Text = DefaultHint;
             CycleCompact.IsChecked = _config.CycleCompact;
             StartWithWindows.IsChecked = _adminStart || AutoStart.IsEnabled();
-            RunAsAdmin.IsChecked = _adminStart;
+            AdminNotice.Visibility = _adminStart ? Visibility.Visible : Visibility.Collapsed;
             StartVisible.IsChecked = _config.StartVisible;
 
             ProfileBox.ItemsSource = _config.Profiles.Select(p => p.Name).ToList();
@@ -126,6 +138,10 @@ public partial class SettingsWindow : Window
             ClaudeRate.SelectedValue = Nearest(ClaudeRate, _config.Claude.RefreshSeconds);
             UseExternalSensors.IsChecked = _config.Hardware.ExternalSensors;
             PingHost.Text = _config.Hardware.PingHost;
+            PowerRest.Text = Number(_config.Power.RestWatts);
+            PowerEfficiency.Text = Number(_config.Power.Efficiency);
+            PowerSupply.Text = Number(_config.Power.SupplyWatts);
+            PowerPrice.Text = Number(_config.Power.PricePerKwh);
 
             PlaceBox.Text = _config.Weather.Place;
             PlaceStatus.Text = _config.Weather.Latitude is null ? "Type your town and press Find." : "";
@@ -172,6 +188,13 @@ public partial class SettingsWindow : Window
         _config.Ranges = Ranges.IsChecked == true;
         hardware.ThreadBars = ThreadBars.IsChecked == true;
         _config.ClickThrough = ClickThrough.IsChecked == true;
+        _config.OledMode = OledMode.IsChecked == true;
+        OledOptions.IsEnabled = _config.OledMode;
+
+        // Only when one of the two lists was the thing changed, so a value set by hand in the settings file
+        // (one the lists do not offer) is not replaced by the nearest one they do.
+        if (ReferenceEquals(sender, OledRate) && OledRate.SelectedValue is double oledSeconds) _config.OledMoveSeconds = (int)oledSeconds;
+        if (ReferenceEquals(sender, OledTravel) && OledTravel.SelectedValue is double oledTravel) _config.OledTravel = (int)oledTravel;
 
         _config.CycleCompact = CycleCompact.IsChecked == true;
         _config.StartVisible = StartVisible.IsChecked == true;
@@ -190,6 +213,13 @@ public partial class SettingsWindow : Window
         if (ClaudeRate.SelectedValue is double claudeSeconds) _config.Claude.RefreshSeconds = (int)claudeSeconds;
         hardware.ExternalSensors = UseExternalSensors.IsChecked == true;
         if (PingHost.Text.Trim() is { Length: > 0 } host) hardware.PingHost = host;
+
+        // A box left with something that is not a number keeps the previous value.
+        var power = _config.Power;
+        power.RestWatts = Math.Clamp(Parse(PowerRest.Text) ?? power.RestWatts, 0, 1000);
+        power.Efficiency = Math.Clamp(Parse(PowerEfficiency.Text) ?? power.Efficiency, 50, 100);
+        power.SupplyWatts = Math.Clamp(Parse(PowerSupply.Text) ?? power.SupplyWatts, 0, 5000);
+        power.PricePerKwh = Math.Max(0, Parse(PowerPrice.Text) ?? power.PricePerKwh);
 
         _config.Weather.Fahrenheit = UnitsBox.SelectedIndex == 2;
         _config.Weather.Mph = UnitsBox.SelectedIndex >= 1;
@@ -226,8 +256,16 @@ public partial class SettingsWindow : Window
         var w = _config.Weather;
         return string.Join('|', _config.Profile, string.Join(',', _config.ActiveProfile.Sections), string.Join(',', _config.Strip),
             string.Join(',', h.Sensors), _config.TrayReading, _config.Claude.Alerts, _config.Claude.RefreshSeconds, h.RefreshSeconds,
-            h.ExternalSensors, h.ThreadBars, h.PingHost, w.Latitude, w.Longitude, w.Fahrenheit, w.Mph);
+            h.ExternalSensors, h.ThreadBars, h.PingHost, w.Latitude, w.Longitude, w.Fahrenheit, w.Mph,
+            _config.Power.RestWatts, _config.Power.Efficiency, _config.Power.SupplyWatts, _config.Power.PricePerKwh);
     }
+
+    private static string Number(double value) => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Accepts "0.28" and, for people whose keyboards give a comma, "0,28".
+    private static double? Parse(string text) =>
+        double.TryParse(text.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : null;
 
     private static double Nearest(ComboBox box, double value) =>
         ((IEnumerable<Choice>)box.ItemsSource).MinBy(c => Math.Abs(c.Value - value))!.Value;
@@ -572,7 +610,7 @@ public partial class SettingsWindow : Window
             if (!on && _adminStart)
             {
                 // The administrator task is what starts it, so that is what has to go. Windows asks for approval.
-                if (AdminStart.Set(false)) _adminStart = false;
+                if (AdminStart.Remove()) _adminStart = false;
             }
             AutoStart.Set(on && !_adminStart);
         }
@@ -582,46 +620,33 @@ public partial class SettingsWindow : Window
 
         _loading = true;
         StartWithWindows.IsChecked = _adminStart || AutoStart.IsEnabled();
-        RunAsAdmin.IsChecked = _adminStart;
+        AdminNotice.Visibility = _adminStart ? Visibility.Visible : Visibility.Collapsed;
         _loading = false;
     }
 
-    private void OnRunAsAdminClicked(object sender, RoutedEventArgs e)
+    // An earlier version could be told to start as administrator. Nothing needs that any more, so this
+    // removes the task that does it and leaves Glance starting with Windows in the ordinary way.
+    private void OnRemoveAdminStart(object sender, RoutedEventArgs e)
     {
-        if (_loading) return;
-
-        var wanted = RunAsAdmin.IsChecked == true;
-        if (AdminStart.Set(wanted))
-        {
-            _adminStart = wanted;
-            try
-            {
-                // Only one of the two should start Glance, or the plain one could win the race at sign-in.
-                AutoStart.Set(!wanted && StartWithWindows.IsChecked == true);
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
-            {
-            }
-            AdminHint.Text = wanted
-                ? "Done. Glance will start as administrator from the next sign-in."
-                : "Glance no longer starts as administrator.";
-            RestartAdmin.Visibility = wanted && !EtwSession.IsElevated() ? Visibility.Visible : Visibility.Collapsed;
-        }
-        else
+        if (!AdminStart.Remove())
         {
             AdminHint.Text = "Windows did not approve the change, so nothing was changed.";
+            return;
+        }
+
+        _adminStart = false;
+        try
+        {
+            AutoStart.Set(true);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+        {
         }
 
         _loading = true;
-        RunAsAdmin.IsChecked = _adminStart;
-        StartWithWindows.IsChecked = _adminStart || AutoStart.IsEnabled();
+        StartWithWindows.IsChecked = AutoStart.IsEnabled();
+        AdminNotice.Visibility = Visibility.Collapsed;
         _loading = false;
-    }
-
-    private void OnRestartAdmin(object sender, RoutedEventArgs e)
-    {
-        if (AdminStart.RestartElevated()) _host.Quit();
-        else AdminHint.Text = "Windows did not approve the restart.";
     }
 
     // ---- Weather place search ----

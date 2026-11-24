@@ -34,6 +34,10 @@ public static class Themes
         new("Violet", "#110F1A", "#1B1828", "#302A45", "#9D94BD", "#E3DFF2", "#FFFFFF", "#A79FC4", "#807A9C", "#2A2540", "#A78BFA", "#F5C26B", "#FB7185"),
         new("Light", "#E6E9EF", "#FFFFFF", "#D2D7E0", "#667080", "#2B303A", "#11141A", "#596170", "#78808E", "#E1E5EB", "#2F6FE4", "#B86E00", "#D43C4E"),
         new("High contrast", "#000000", "#000000", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#E6E6E6", "#CCCCCC", "#404040", "#00E5FF", "#FFD400", "#FF6B6B"),
+
+        // For OLED screens: black is a pixel switched off, which neither wears nor uses power, and the text is
+        // kept below full brightness because wear grows with brightness.
+        new("OLED black", "#000000", "#000000", "#1F1F1F", "#7C7C7C", "#B4B4B4", "#D6D6D6", "#8A8A8A", "#6C6C6C", "#1A1A1A", "#4A9BE0", "#D69A3C", "#D9535F"),
     ];
 
     public static Theme Find(string? name) => All.FirstOrDefault(t => t.Name == name) ?? All[0];

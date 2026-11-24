@@ -75,8 +75,16 @@ public sealed class FpsProvider(TimeSpan interval) : IMetricProvider, IPausable,
             ?? apps.Where(a => foregroundName is not null && NameOf(a.ProcessId) == foregroundName).MaxBy(a => a.Fps)
             ?? apps.Where(a => a.Fps >= 20).MaxBy(a => a.Fps);
 
+        // With nothing to measure the readings stay, as dashes, so the panel does not change size each time
+        // an app that draws frames comes to the front or leaves it.
         if (target is null)
-            return MetricSnapshot.Info("Nothing is drawing frames right now.", foregroundName);
+        {
+            return new MetricSnapshot
+            {
+                Subtitle = foregroundName is null ? "no frames" : foregroundName + ", no frames",
+                Items = Readings(null, null, null, null),
+            };
+        }
 
         if (_capturing)
         {
@@ -86,20 +94,25 @@ public sealed class FpsProvider(TimeSpan interval) : IMetricProvider, IPausable,
         return new MetricSnapshot
         {
             Subtitle = NameOf(target.ProcessId),
-            Items =
-            [
-                new MetricItem("Now") { Key = "now", ValueText = Format.Whole(target.Fps), Brief = Format.Whole(target.Fps), Number = target.Fps, Unit = "fps", Graph = true },
-                new MetricItem("Frame time")
-                {
-                    Key = "frametime",
-                    ValueText = target.FrameTimeMs.ToString("0.0", CultureInfo.InvariantCulture) + " ms",
-                    Number = target.FrameTimeMs,
-                    Unit = "ms",
-                },
-                new MetricItem("Average") { Key = "average", ValueText = Format.Whole(target.Average), Number = target.Average, Unit = "fps" },
-                new MetricItem("1% low") { Key = "low1", ValueText = Format.Whole(target.OnePercentLow), Number = target.OnePercentLow, Unit = "fps" },
-            ],
+            Items = Readings(target.Fps, target.FrameTimeMs, target.Average, target.OnePercentLow),
         };
+    }
+
+    private static MetricItem[] Readings(double? fps, double? frameTimeMs, double? average, double? low)
+    {
+        return
+        [
+            Reading("Now", "now", fps, "fps") with { Graph = true },
+            Reading("Frame time", "frametime", frameTimeMs, "ms") with
+            {
+                ValueText = frameTimeMs is { } ms ? ms.ToString("0.0", CultureInfo.InvariantCulture) + " ms" : Format.Missing,
+            },
+            Reading("Average", "average", average, "fps"),
+            Reading("1% low", "low1", low, "fps"),
+        ];
+
+        static MetricItem Reading(string label, string key, double? value, string unit) =>
+            new(label) { Key = key, ValueText = value is { } v ? Format.Whole(v) : Format.Missing, Number = value, Unit = unit };
     }
 
     /// <summary>Starts keeping every frame time, for a benchmark. Frames are attributed when the capture ends.</summary>

@@ -44,16 +44,15 @@ public sealed class PingProvider(string host, TimeSpan interval) : IMetricProvid
         {
             latest is { } ms
                 ? new MetricItem("Now") { Key = "now", ValueText = $"{ms} ms", Number = ms, Unit = "ms", Graph = true }
-                : new MetricItem("Now") { Key = "now", ValueText = "lost", Level = MetricLevel.Critical },
+                : new MetricItem("Now") { Key = "now", ValueText = "lost", Unit = "ms", Graph = true, Level = MetricLevel.Critical },
         };
-        if (answered.Count > 0)
-        {
-            items.Add(new MetricItem("Average") { Key = "average", ValueText = Format.Whole(answered.Average()) + " ms", Number = answered.Average(), Unit = "ms" });
 
-            // Jitter: how much consecutive pings differ from each other on average.
-            var jitter = answered.Count > 1 ? answered.Zip(answered.Skip(1), (a, b) => Math.Abs(a - b)).Average() : 0;
-            items.Add(new MetricItem("Jitter") { Key = "jitter", ValueText = Format.Whole(jitter) + " ms", Number = jitter, Unit = "ms" });
-        }
+        // Jitter: how much consecutive pings differ from each other on average.
+        double? average = answered.Count > 0 ? answered.Average() : null;
+        double? jitter = answered.Count > 1 ? answered.Zip(answered.Skip(1), (a, b) => Math.Abs(a - b)).Average()
+            : answered.Count == 1 ? 0 : null;
+        items.Add(Milliseconds("Average", "average", average));
+        items.Add(Milliseconds("Jitter", "jitter", jitter));
         items.Add(new MetricItem("Loss")
         {
             Key = "loss", ValueText = Format.Percent(loss), Number = loss, Unit = "%",
@@ -61,6 +60,9 @@ public sealed class PingProvider(string host, TimeSpan interval) : IMetricProvid
         });
 
         return new MetricSnapshot { Items = items, Subtitle = host };
+
+        static MetricItem Milliseconds(string label, string key, double? value) =>
+            new(label) { Key = key, ValueText = value is { } ms ? Format.Whole(ms) + " ms" : Format.Missing, Number = value, Unit = "ms" };
     }
 
     public void Dispose() => _ping.Dispose();

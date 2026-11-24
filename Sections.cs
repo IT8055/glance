@@ -18,12 +18,14 @@ internal static class Sections
         ("gpuapps", "GPU by app"),
         ("cpu", "CPU"),
         ("cpuapps", "CPU by app"),
+        ("power", "Power"),
         ("memory", "Memory"),
         ("memoryapps", "Memory by app"),
         ("disk", "Disk activity"),
         ("ioapps", "I/O by app"),
         ("drives", "Drive space"),
         ("network", "Network"),
+        ("netapps", "Network by app"),
         ("ping", "Ping"),
         ("sensors", "Extra sensors"),
         ("battery", "Battery"),
@@ -33,7 +35,7 @@ internal static class Sections
     ];
 
     /// <summary>What a benchmark records, whether or not the profile in use shows them.</summary>
-    public static readonly IReadOnlyList<string> Benchmarked = ["fps", "gpu", "cpu", "memory", "disk", "network", "sensors", "ping"];
+    public static readonly IReadOnlyList<string> Benchmarked = ["fps", "gpu", "cpu", "power", "memory", "disk", "network", "sensors", "ping"];
 
     public static bool Exists(string id) => All.Any(s => s.Id == id);
 
@@ -73,12 +75,14 @@ internal static class Sections
             "gpuapps" => [new GpuAppsProvider(rate)],
             "cpu" => [new CpuProvider(rate, hardware.ThreadBars)],
             "cpuapps" => [new TopAppsProvider(TopAppsProvider.Kind.Cpu, rate)],
+            "power" => [new PowerProvider(config.Power, rate)],
             "memory" => [new MemoryProvider(rate)],
             "memoryapps" => [new TopAppsProvider(TopAppsProvider.Kind.Memory, rate)],
             "disk" => [new DiskActivityProvider(rate)],
             "ioapps" => [new TopAppsProvider(TopAppsProvider.Kind.Io, rate)],
             "drives" => [new DriveSpaceProvider()],
             "network" => [new NetworkProvider(rate)],
+            "netapps" => [new NetAppsProvider(rate)],
             "ping" => [new PingProvider(hardware.PingHost.Trim(), rate)],
             "sensors" => [new SensorsProvider(hardware.Sensors.ToList(), rate)],
             "battery" => [new BatteryProvider()],

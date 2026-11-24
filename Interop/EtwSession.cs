@@ -17,6 +17,7 @@ internal sealed class EtwSession : IDisposable
 {
     private const uint AccessDenied = 5;
     private const uint AlreadyExists = 183;
+    private const uint ControlQuery = 0;
     private const uint ControlStop = 1;
     private const uint ControlFlush = 3;
     private const uint EnableProvider = 1;
@@ -28,15 +29,20 @@ internal sealed class EtwSession : IDisposable
     private const int LogFileSize = 448;     // EVENT_TRACE_LOGFILEW
 
     private readonly string _name;
+    private readonly bool _busy;
     private readonly Action<IntPtr> _onEvent;
     private readonly EventRecordCallback _callback; // held so the native side never calls a collected delegate
     private ulong _session;
     private ulong _trace = InvalidHandle;
     private Thread? _thread;
 
-    private EtwSession(string name, Action<IntPtr> onEvent)
+    private EtwSession(string name, Action<IntPtr> onEvent, bool busy)
     {
-        _name = name;
+        // Sessions are known to the whole PC by name, and starting one whose name is taken stops the other
+        // (that is how a session left behind by a crash is cleared). The tag keeps a copy of Glance run with
+        // its own settings folder from doing that to the main copy.
+        _name = name + AppPaths.InstanceTag;
+        _busy = busy;
         _onEvent = onEvent;
         _callback = record =>
         {
@@ -68,9 +74,19 @@ internal sealed class EtwSession : IDisposable
     }
 
     /// <summary>Starts the session and begins delivering events from the given providers.</summary>
-    public static EtwSession Start(string name, Action<IntPtr> onEvent, params Provider[] providers)
+    public static EtwSession Start(string name, Action<IntPtr> onEvent, params Provider[] providers) =>
+        Start(name, onEvent, busy: false, providers);
+
+    /// <param name="busy">
+    /// True for a provider that can log tens of thousands of events a second (socket traffic during a fast
+    /// download). The session then gets enough buffer space that a burst is not dropped, and one stream of
+    /// events shared by all processors instead of a stream each. With a stream each, Windows holds the newest
+    /// events back (for a second or more, measured) until it can be sure of their order across processors,
+    /// which makes per-second figures lurch. With one stream, a flush delivers everything within milliseconds.
+    /// </param>
+    public static EtwSession Start(string name, Action<IntPtr> onEvent, bool busy, params Provider[] providers)
     {
-        var session = new EtwSession(name, onEvent);
+        var session = new EtwSession(name, onEvent, busy);
         try
         {
             session.Open(providers);
@@ -149,12 +165,30 @@ internal sealed class EtwSession : IDisposable
     /// Pushes buffered events out now. Without this they arrive in one-second batches, which would make
     /// every reading lag by up to a second.
     /// </summary>
-    public void Flush()
+    public uint Flush()
     {
-        if (_session == 0) return;
+        if (_session == 0) return 0;
         var properties = NewProperties();
-        ControlTraceW(_session, null, properties, ControlFlush);
+        var status = ControlTraceW(_session, null, properties, ControlFlush);
         Marshal.FreeHGlobal(properties);
+        return status;
+    }
+
+    /// <summary>How many events Windows has had to drop because they arrived faster than they could be handed over.</summary>
+    public long LostEvents()
+    {
+        if (_session == 0) return 0;
+        var properties = NewProperties();
+        try
+        {
+            if (ControlTraceW(_session, null, properties, ControlQuery) != 0) return 0;
+            // EventsLost, plus whole buffers lost on the way to this process.
+            return (uint)Marshal.ReadInt32(properties, 88) + (long)(uint)Marshal.ReadInt32(properties, 100);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(properties);
+        }
     }
 
     public void Dispose()
@@ -175,7 +209,7 @@ internal sealed class EtwSession : IDisposable
         _thread = null;
     }
 
-    private static IntPtr NewProperties()
+    private IntPtr NewProperties()
     {
         const int size = PropertiesSize + NameBytes * 2;
         var p = Marshal.AllocHGlobal(size);
@@ -183,10 +217,14 @@ internal sealed class EtwSession : IDisposable
         Marshal.WriteInt32(p, 0, size);                 // Wnode.BufferSize
         Marshal.WriteInt32(p, 40, 1);                   // Wnode.ClientContext: high resolution timestamps
         Marshal.WriteInt32(p, 44, 0x00020000);          // Wnode.Flags: WNODE_FLAG_TRACED_GUID
-        Marshal.WriteInt32(p, 48, 64);                  // BufferSize, in KB
-        Marshal.WriteInt32(p, 52, 4);                   // MinimumBuffers
-        Marshal.WriteInt32(p, 56, 32);                  // MaximumBuffers
-        Marshal.WriteInt32(p, 64, 0x100);               // LogFileMode: EVENT_TRACE_REAL_TIME_MODE
+
+        // Windows keeps a buffer per processor thread and swaps in a spare when one fills. With too few
+        // spares on a many-core PC, a burst of events is simply dropped, so a busy session is sized by core count.
+        var cores = Environment.ProcessorCount;
+        Marshal.WriteInt32(p, 48, _busy ? 256 : 64);                    // BufferSize, in KB
+        Marshal.WriteInt32(p, 52, _busy ? cores * 2 : 4);               // MinimumBuffers
+        Marshal.WriteInt32(p, 56, _busy ? cores * 4 + 32 : 32);         // MaximumBuffers
+        Marshal.WriteInt32(p, 64, 0x100 | (_busy ? 0x10000000 : 0)); // LogFileMode: real time, and for busy: no per-processor buffering
         Marshal.WriteInt32(p, 68, 1);                   // FlushTimer, in seconds
         Marshal.WriteInt32(p, 116, PropertiesSize);     // LoggerNameOffset
         return p;
@@ -196,6 +234,7 @@ internal sealed class EtwSession : IDisposable
 
     /// <summary>Bit 0x20 of the header flags: the event came from a 32-bit process, so pointers in it are 4 bytes.</summary>
     public static bool Is32Bit(IntPtr record) => (Marshal.ReadInt16(record, 4) & 0x20) != 0;
+    public static int ThreadId(IntPtr record) => Marshal.ReadInt32(record, 8);
     public static int ProcessId(IntPtr record) => Marshal.ReadInt32(record, 12);
 
     /// <summary>Event time in 100 ns units (FILETIME, UTC).</summary>

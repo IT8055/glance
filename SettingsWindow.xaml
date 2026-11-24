@@ -104,6 +104,19 @@
                     <CheckBox x:Name="ThreadBars" Content="A small bar for every CPU thread" Margin="0,2" Click="OnChanged"/>
                     <CheckBox x:Name="ClickThrough" Content="Let clicks pass through the widget" Margin="0,2" Click="OnChanged"
                               ToolTip="The widget can then only be changed from its icon near the clock"/>
+
+                    <CheckBox x:Name="OledMode" Content="OLED mode: keep the widget moving, a pixel at a time, to guard against burn-in"
+                              Margin="0,10,0,2" Click="OnChanged"/>
+                    <StackPanel x:Name="OledOptions" Orientation="Horizontal" Margin="28,2,0,0">
+                        <TextBlock Text="Move one pixel" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="OledRate" Width="170" Margin="8,0,16,0" DisplayMemberPath="Name" SelectedValuePath="Value"
+                                  SelectionChanged="OnChanged"/>
+                        <TextBlock Text="and stray up to" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="OledTravel" Width="120" Margin="8,0,0,0" DisplayMemberPath="Name" SelectedValuePath="Value"
+                                  SelectionChanged="OnChanged"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Hint}" Margin="28,6,0,0" TextWrapping="Wrap"
+                               Text="Each move is too small to notice. Pinned to a corner, the widget only strays inwards. The colours “OLED black” help as well: a black pixel is switched off."/>
                 </StackPanel>
             </TabItem>
 
@@ -137,11 +150,13 @@
 
                     <TextBlock Text="Starting up" Style="{StaticResource Heading}" Margin="0,22,0,12"/>
                     <CheckBox x:Name="StartWithWindows" Content="Start Glance with Windows" Margin="0,2" Click="OnChanged"/>
-                    <CheckBox x:Name="RunAsAdmin" Content="Start it as administrator" Margin="0,2" Click="OnRunAsAdminClicked"/>
-                    <TextBlock x:Name="AdminHint" Style="{StaticResource Hint}" Margin="28,0,0,8"
-                               Text="Needed to split network traffic into web and LAN. Windows asks for approval once."/>
-                    <Button x:Name="RestartAdmin" Content="Restart Glance as administrator now" HorizontalAlignment="Left"
-                            Margin="28,0,0,10" Visibility="Collapsed" Click="OnRestartAdmin"/>
+                    <!-- Only shown on PCs where an earlier version was told to start as administrator. -->
+                    <StackPanel x:Name="AdminNotice" Margin="28,2,0,8" Visibility="Collapsed">
+                        <TextBlock x:Name="AdminHint" Style="{StaticResource Hint}"
+                                   Text="Glance is set to start as administrator. That was for the web and LAN traffic split, which no longer needs it."/>
+                        <Button Content="Go back to a normal start…" HorizontalAlignment="Left" Margin="0,6,0,0" Click="OnRemoveAdminStart"
+                                ToolTip="Removes the administrator task. Windows asks for approval once."/>
+                    </StackPanel>
                     <CheckBox x:Name="StartVisible" Content="Show the widget as soon as Glance starts" Margin="0,2" Click="OnChanged"/>
                 </StackPanel>
             </TabItem>
@@ -243,6 +258,32 @@
                                  ItemContainerStyle="{StaticResource CompactRow}"/>
                     </Expander>
 
+                    <!-- The assumptions behind the Power panel's whole-PC estimate. -->
+                    <Grid Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="100"/><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Rest of PC, W" Style="{StaticResource FieldLabel}"
+                                   ToolTip="An allowance in watts for what cannot be measured: motherboard, memory, drives and fans"/>
+                        <TextBox x:Name="PowerRest" Grid.Column="1" LostFocus="OnChanged"/>
+                        <TextBlock Grid.Column="2" Text="Supply efficiency, %" Style="{StaticResource FieldLabel}" Margin="16,0,0,0"
+                                   ToolTip="How efficient your power supply is. Most modern ones are between 85 and 94"/>
+                        <TextBox x:Name="PowerEfficiency" Grid.Column="3" LostFocus="OnChanged"/>
+                    </Grid>
+                    <Grid Style="{StaticResource Field}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="100"/><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/><ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Supply size, W" Style="{StaticResource FieldLabel}"
+                                   ToolTip="The rating of your power supply. Leave at 0 if you do not know it"/>
+                        <TextBox x:Name="PowerSupply" Grid.Column="1" LostFocus="OnChanged"/>
+                        <TextBlock Grid.Column="2" Text="Price per kWh" Style="{StaticResource FieldLabel}" Margin="16,0,0,0"
+                                   ToolTip="What you pay for a unit of electricity, for example 0.28. Leave at 0 to hide the cost"/>
+                        <TextBox x:Name="PowerPrice" Grid.Column="3" LostFocus="OnChanged"/>
+                    </Grid>
+                    <TextBlock Style="{StaticResource Hint}" Margin="0,-4,0,10"
+                               Text="The Power panel measures the CPU and graphics card. For the whole PC it adds the allowance above and divides by the supply's efficiency, so that figure is an estimate."/>
+
                     <Grid Style="{StaticResource Field}">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <TextBlock Text="Ping host" Style="{StaticResource FieldLabel}"/>
@@ -267,8 +308,8 @@
 
                     <StackPanel x:Name="TracePermission" Margin="0,4,0,0" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource Hint}"
-                                   Text="FPS needs Windows permission to read frame events. Granting it adds your account to the Performance Log Users group. Windows will ask for an administrator's approval, and you need to sign out and back in afterwards."/>
-                        <Button x:Name="GrantButton" Content="Allow the FPS counter…" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnGrantPermission"/>
+                                   Text="FPS, and the web, LAN and per-program network figures, need Windows permission to read performance events. Granting it adds your account to the Performance Log Users group. Windows will ask for an administrator's approval, and you need to sign out and back in afterwards."/>
+                        <Button x:Name="GrantButton" Content="Allow FPS and network details…" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnGrantPermission"/>
                         <TextBlock x:Name="GrantStatus" Style="{StaticResource Hint}" Margin="0,6,0,0"/>
                     </StackPanel>
 

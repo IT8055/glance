@@ -25,13 +25,30 @@ public sealed class ColumnsPanel : Panel
         "Column", typeof(int), typeof(ColumnsPanel),
         new FrameworkPropertyMetadata(-1, FrameworkPropertyMetadataOptions.AffectsParentMeasure));
 
+    /// <summary>True once a child is about the size it will stay. Until all are, the columns are shared out afresh each time.</summary>
+    public static readonly DependencyProperty SettledProperty = DependencyProperty.RegisterAttached(
+        "Settled", typeof(bool), typeof(ColumnsPanel),
+        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsParentMeasure));
+
+    /// <summary>A new value here makes the columns be shared out afresh, because the panels are a different size now.</summary>
+    public static readonly DependencyProperty EpochProperty = DependencyProperty.Register(
+        nameof(Epoch), typeof(int), typeof(ColumnsPanel),
+        new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.AffectsMeasure));
+
     /// <summary>Where a dragged panel would land, and where to draw the marker that shows it.</summary>
     /// <param name="NewColumn">True when it would start a column of its own at position <paramref name="Column"/>.</param>
     public readonly record struct DropTarget(int Column, int Index, bool NewColumn, Rect Marker);
 
     private List<List<UIElement>> _arranged = [];
     private List<List<Rect>> _bounds = [];
+    private Shared? _shared;
 
+    // How the columns were last shared out, and what that was based on. Panels are told apart by what they
+    // show, because the elements themselves can be replaced.
+    private sealed record Shared(int Columns, double MaxColumnHeight, int Epoch, List<object> Contents, List<int> ColumnOf);
+
+    public static bool GetSettled(UIElement element) => (bool)element.GetValue(SettledProperty);
+    public static void SetSettled(UIElement element, bool value) => element.SetValue(SettledProperty, value);
     public static int GetColumn(UIElement element) => (int)element.GetValue(ColumnProperty);
     public static void SetColumn(UIElement element, int value) => element.SetValue(ColumnProperty, value);
 
@@ -52,6 +69,12 @@ public sealed class ColumnsPanel : Panel
         set => SetValue(MaxColumnHeightProperty, value);
     }
 
+    public int Epoch
+    {
+        get => (int)GetValue(EpochProperty);
+        set => SetValue(EpochProperty, value);
+    }
+
     public double ColumnWidth { get; set; } = 288;
 
     /// <summary>Space between panels, across and down.</summary>
@@ -65,7 +88,7 @@ public sealed class ColumnsPanel : Panel
         foreach (UIElement child in InternalChildren)
             child.Measure(new Size(ColumnWidth, double.PositiveInfinity));
 
-        var columns = Distribute();
+        var columns = Distribute(remember: false);
         var height = columns.Count == 0 ? 0 : columns.Max(HeightOf);
         var count = Math.Max(1, columns.Count);
         return new Size(count * ColumnWidth + (count - 1) * Gap, height);
@@ -73,7 +96,8 @@ public sealed class ColumnsPanel : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        _arranged = Distribute();
+        // Sizes are only final once measuring is over, so this is when an arrangement is worth remembering.
+        _arranged = Distribute(remember: true);
         _bounds = [];
         double x = 0;
         foreach (var column in _arranged)
@@ -118,7 +142,7 @@ public sealed class ColumnsPanel : Panel
     private double HeightOf(List<UIElement> column) =>
         column.Sum(c => c.DesiredSize.Height) + Gap * Math.Max(0, column.Count - 1);
 
-    private List<List<UIElement>> Distribute()
+    private List<List<UIElement>> Distribute(bool remember)
     {
         var children = InternalChildren.Cast<UIElement>().Where(c => c.Visibility != Visibility.Collapsed).ToList();
         if (children.Count == 0) return [];
@@ -132,11 +156,31 @@ public sealed class ColumnsPanel : Panel
                 .ToList();
         }
 
+        // Once shared out, panels stay in their columns. Otherwise one growing by a line could tip its
+        // neighbour over into the next column. It is done again if something it was based on has changed, or
+        // a column no longer fits the screen.
+        var contents = children.Select(c => (c as FrameworkElement)?.DataContext ?? c).ToList();
+        if (_shared is { } shared && shared.Columns == Columns && shared.MaxColumnHeight == MaxColumnHeight &&
+            shared.Epoch == Epoch && shared.Contents.SequenceEqual(contents))
+        {
+            var kept = children.Select((child, i) => (child, Column: shared.ColumnOf[i]))
+                .GroupBy(c => c.Column, c => c.child).OrderBy(g => g.Key).Select(g => g.ToList()).ToList();
+            if (kept.Count >= children.Count || kept.Max(HeightOf) <= MaxColumnHeight) return kept;
+        }
+
         // Start with the number of columns asked for, and add more only if that does not fit the screen.
         for (var count = Math.Clamp(Columns, 1, children.Count); ; count++)
         {
             var columns = Balance(children, count);
-            if (count >= children.Count || columns.Max(HeightOf) <= MaxColumnHeight) return columns;
+            if (count < children.Count && columns.Max(HeightOf) > MaxColumnHeight) continue;
+
+            if (remember)
+            {
+                _shared = children.All(GetSettled)
+                    ? new Shared(Columns, MaxColumnHeight, Epoch, contents, children.Select(c => columns.FindIndex(column => column.Contains(c))).ToList())
+                    : null;
+            }
+            return columns;
         }
     }
 

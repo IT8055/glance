@@ -15,10 +15,7 @@ public partial class App : Application, ISettingsHost
 
     // One running Glance per settings folder. A copy started with its own GLANCE_HOME (testing, a second
     // profile) is a separate instance and does not defer to the normal one.
-    private static readonly string InstanceName = @"Local\Glance.Overlay" +
-        (Environment.GetEnvironmentVariable("GLANCE_HOME") is { Length: > 0 } home
-            ? "." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(home.ToLowerInvariant())), 0, 8)
-            : "");
+    private static readonly string InstanceName = @"Local\Glance.Overlay" + AppPaths.InstanceTag;
 
     private readonly OverlayViewModel _viewModel = new();
     private readonly DisplayOptions _options = new();
@@ -49,12 +46,6 @@ public partial class App : Application, ISettingsHost
         base.OnStartup(e);
 
         _instanceLock = new Mutex(initiallyOwned: true, InstanceName, out var isFirstInstance);
-        if (!isFirstInstance && e.Args.Contains("--restart"))
-        {
-            // Started to take over from a copy that is on its way out (restarting as administrator).
-            try { isFirstInstance = _instanceLock.WaitOne(TimeSpan.FromSeconds(10)); }
-            catch (AbandonedMutexException) { isFirstInstance = true; }
-        }
         if (!isFirstInstance)
         {
             // Already running: ask that instance to show the widget, then leave.
@@ -83,6 +74,16 @@ public partial class App : Application, ISettingsHost
         if (Argument(e.Args, "--probe-events") is { } eventsFile)
         {
             _ = Diagnostics.CountGraphicsEventsAsync(eventsFile, seconds).ContinueWith(_ => Dispatcher.Invoke(Shutdown));
+            return;
+        }
+        if (Argument(e.Args, "--probe-etw") is { } etwFile)
+        {
+            _ = Diagnostics.ProbeProvidersAsync(etwFile, seconds, Argument(e.Args, "--providers") ?? "",
+                    int.TryParse(Argument(e.Args, "--pid"), out var focus) ? focus : 0,
+                    int.TryParse(Argument(e.Args, "--key-bytes"), out var keyBytes) ? keyBytes : 0,
+                    int.TryParse(Argument(e.Args, "--sum-offset"), out var sumOffset) ? sumOffset : -1,
+                    int.TryParse(Argument(e.Args, "--key-offset"), out var keyOffset) ? keyOffset : -1)
+                .ContinueWith(_ => Dispatcher.Invoke(Shutdown));
             return;
         }
         if (Argument(e.Args, "--probe") is { } probeFile)
@@ -133,7 +134,7 @@ public partial class App : Application, ISettingsHost
         _tray.ResetRangesRequested += () =>
         {
             _host.ResetRanges();
-            _host.Redraw();
+            _host.Redraw(resized: false);
         };
         _tray.ClickThroughChanged += on =>
         {
@@ -174,6 +175,7 @@ public partial class App : Application, ISettingsHost
         if (settingsSnapshotPath is not null)
             _ = SnapshotSettingsThenExit(settingsSnapshotPath, int.TryParse(Argument(e.Args, "--tab"), out var tab) ? tab : 0);
         if (e.Args.Contains("--benchmark")) _ = BenchmarkThenExit(seconds);
+        if (Argument(e.Args, "--watch-layout") is { } layoutFile) _ = WatchLayoutThenExit(layoutFile, seconds);
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -487,7 +489,11 @@ public partial class App : Application, ISettingsHost
         if (sourcesChanged) RebuildProviders();
         else
         {
-            if (redraw) _host.Redraw();
+            if (redraw)
+            {
+                _host.Redraw(resized: true);
+                _viewModel.LayoutEpoch++;
+            }
             ApplyLayout();
             UpdateDemand();
         }
@@ -517,8 +523,6 @@ public partial class App : Application, ISettingsHost
             Log.Write("Could not open the benchmarks folder: " + ex.Message);
         }
     }
-
-    public void Quit() => Shutdown();
 
     private void ScheduleSave()
     {
@@ -598,6 +602,37 @@ public partial class App : Application, ISettingsHost
             Log.Write("Drag " + _window.SimulatePanelDrag(parts[0], new Point(x, y)));
             await Task.Delay(300);
         }
+    }
+
+    // Writes a line every time any panel, or the widget itself, changes size or place.
+    private async Task WatchLayoutThenExit(string path, int seconds)
+    {
+        var lines = new List<string>();
+        var clock = Stopwatch.StartNew();
+        var last = new Dictionary<string, Rect>();
+
+        void Look()
+        {
+            var now = _window.PanelBounds().ToDictionary(p => p.Id, p => p.Bounds);
+            now["(widget)"] = new Rect(0, 0, _window.ActualWidth, _window.ActualHeight);
+            foreach (var (id, bounds) in now)
+            {
+                if (!last.TryGetValue(id, out var was))
+                    lines.Add($"{clock.Elapsed.TotalSeconds,6:0.00}  {id,-11} appears  {bounds.Width:0}x{bounds.Height:0.#} at {bounds.X:0},{bounds.Y:0.#}");
+                else if (Math.Abs(was.Height - bounds.Height) > 0.2 || Math.Abs(was.Width - bounds.Width) > 0.2)
+                    lines.Add($"{clock.Elapsed.TotalSeconds,6:0.00}  {id,-11} resized  {was.Width:0}x{was.Height:0.#} to {bounds.Width:0}x{bounds.Height:0.#}");
+                else if (Math.Abs(was.X - bounds.X) > 0.2 || Math.Abs(was.Y - bounds.Y) > 0.2)
+                    lines.Add($"{clock.Elapsed.TotalSeconds,6:0.00}  {id,-11} moved    {was.X:0},{was.Y:0.#} to {bounds.X:0},{bounds.Y:0.#}");
+            }
+            foreach (var gone in last.Keys.Where(id => !now.ContainsKey(id)))
+                lines.Add($"{clock.Elapsed.TotalSeconds,6:0.00}  {gone,-11} gone");
+            last = now;
+        }
+
+        _window.LayoutUpdated += (_, _) => Look();
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        File.WriteAllLines(path, lines);
+        Shutdown();
     }
 
     private async Task SnapshotThenExit(string path, int seconds)

@@ -33,8 +33,19 @@ public sealed class DisplayOptions
 /// <summary>One section's contribution to the compact strip: "GPU 97% 64 °C".</summary>
 public sealed record StripGroup(string Title, IReadOnlyList<StripValue> Values);
 
-/// <param name="Level">Colours the value, in the theme's warning or critical colour.</param>
-public sealed record StripValue(string Text, MetricLevel Level);
+/// <summary>One value in the compact strip. Updated in place, so the strip is not rebuilt at every reading.</summary>
+public sealed class StripValue(string reading) : Observable
+{
+    private string _text = "";
+    private MetricLevel _level;
+
+    /// <summary>Which reading this is, such as "gpu.temp".</summary>
+    public string Reading { get; } = reading;
+    public string Text { get => _text; set => Set(ref _text, value); }
+
+    /// <summary>Colours the value, in the theme's warning or critical colour.</summary>
+    public MetricLevel Level { get => _level; set => Set(ref _level, value); }
+}
 
 public sealed class OverlayViewModel : Observable
 {
@@ -44,7 +55,9 @@ public sealed class OverlayViewModel : Observable
     private string _recording = "";
     private IReadOnlyList<StripGroup> _strip = [];
     private bool _stripChosen;
+    private readonly HashSet<string> _stripSeen = [];
     private string _profileTitle = "";
+    private int _layoutEpoch;
 
     public ObservableCollection<SectionViewModel> Sections { get; } = [];
 
@@ -56,6 +69,9 @@ public sealed class OverlayViewModel : Observable
 
     /// <summary>Room available for one column of sections on the current screen. Set by the window.</summary>
     public double MaxColumnHeight { get => _maxColumnHeight; set => Set(ref _maxColumnHeight, value); }
+
+    /// <summary>Goes up when a display option has changed the size of the panels, so they are shared out among the columns afresh.</summary>
+    public int LayoutEpoch { get => _layoutEpoch; set => Set(ref _layoutEpoch, value); }
 
     /// <summary>True while the one-line strip is showing instead of the full widget.</summary>
     public bool IsCompact
@@ -90,24 +106,50 @@ public sealed class OverlayViewModel : Observable
 
     public bool IsRecording => _recording.Length > 0;
 
-    /// <summary>Rebuilds the compact strip from the chosen readings ("gpu.temp"), grouped by section in the order given.</summary>
+    /// <summary>
+    /// Brings the compact strip up to date with the chosen readings ("gpu.temp"), grouped by section in the
+    /// order given. A reading that has been there and is missing for the moment leaves a dash in its place
+    /// instead of making the strip shorter.
+    /// </summary>
     public void UpdateStrip(IEnumerable<string> readings, IEnumerable<SectionViewModel> sections)
     {
         var byId = sections.ToDictionary(s => s.Id);
-        var groups = new List<(string Title, List<StripValue> Values)>();
+        var groups = new List<(string Title, List<(string Reading, string Text, MetricLevel Level)> Values)>();
         _stripChosen = false;
         foreach (var reading in readings)
         {
             _stripChosen = true;
             var dot = reading.IndexOf('.');
             if (dot <= 0 || !byId.TryGetValue(reading[..dot], out var section)) continue;
-            if (section.Find(reading[(dot + 1)..]) is not { } item || item.Brief.Length == 0) continue;
+
+            var item = section.Find(reading[(dot + 1)..]);
+            var text = item?.Brief ?? "";
+            if (text.Length > 0) _stripSeen.Add(reading);
+            else if (_stripSeen.Contains(reading)) text = Format.Missing;
+            else continue;
 
             var group = groups.FirstOrDefault(g => g.Title == section.Title);
             if (group.Values is null) groups.Add(group = (section.Title, []));
-            group.Values.Add(new StripValue(item.Brief, item.Level));
+            group.Values.Add((reading, text, item?.Level ?? MetricLevel.Normal));
         }
-        Strip = groups.Select(g => new StripGroup(g.Title.ToUpperInvariant(), g.Values)).ToList();
+
+        // Only rebuilt when the readings themselves are different ones.
+        var shape = groups.SelectMany(g => g.Values.Select(v => g.Title.ToUpperInvariant() + "|" + v.Reading));
+        if (!_strip.SelectMany(g => g.Values.Select(v => g.Title + "|" + v.Reading)).SequenceEqual(shape) || groups.Count == 0)
+        {
+            Strip = groups
+                .Select(g => new StripGroup(g.Title.ToUpperInvariant(), g.Values.Select(v => new StripValue(v.Reading)).ToList()))
+                .ToList();
+        }
+
+        for (var g = 0; g < groups.Count; g++)
+        {
+            for (var v = 0; v < groups[g].Values.Count; v++)
+            {
+                _strip[g].Values[v].Text = groups[g].Values[v].Text;
+                _strip[g].Values[v].Level = groups[g].Values[v].Level;
+            }
+        }
     }
 }
 
@@ -115,24 +157,53 @@ public sealed class OverlayViewModel : Observable
 /// One provider's panel in the widget: a heading, full-width rows (with bars or graphs), compact tiles
 /// (two to a line) and an optional notice.
 /// </summary>
-public sealed class SectionViewModel(string id, string title, DisplayOptions options) : Observable
+public sealed class SectionViewModel : Observable
 {
     private static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(90);
 
     // Kept by reading name so a reading keeps its history when it moves between rows and tiles.
     private readonly Dictionary<string, ItemViewModel> _items = [];
+    private readonly DisplayOptions _options;
     private MetricSnapshot? _last;
     private DateTimeOffset? _lastGood;
     private int _column = -1;
+    private int _epoch;
+    private bool _renewed;
+    private bool _hasReported;
+    private int _listed;
     private string _subtitle = "";
-    private string _notice = "Loading…";
+    private string _notice = "";
+    private string _listNotice = "";
     private bool _noticeIsError;
     private string _updatedText = "";
 
+    /// <param name="reservedRows">
+    /// For a list whose length changes from moment to moment: how many rows it always takes up. Rows it has
+    /// nothing for are left blank, so the panel stays the same size. Zero for everything else.
+    /// </param>
+    public SectionViewModel(string id, string title, DisplayOptions options, int reservedRows = 0)
+    {
+        Id = id;
+        Title = title;
+        Heading = title.ToUpperInvariant();
+        ReservedRows = reservedRows;
+        _options = options;
+        FillList([], DateTimeOffset.Now, isNewReading: false);
+        ShowNotice("Loading…", isError: false);
+    }
+
     /// <summary>The section's stable name, the first half of a reading name such as "gpu.temp".</summary>
-    public string Id { get; } = id;
-    public string Title { get; } = title;
-    public string Heading { get; } = title.ToUpperInvariant();
+    public string Id { get; }
+    public string Title { get; }
+    public string Heading { get; }
+    public int ReservedRows { get; }
+
+    /// <summary>Goes up when the panel is meant to be a different size from now on. See <see cref="SteadyBox"/>.</summary>
+    public int Epoch { get => _epoch; private set => Set(ref _epoch, value); }
+
+    /// <summary>True once there has been a first answer, good or bad, so the panel is about the size it will stay.</summary>
+    public bool HasReported { get => _hasReported; private set => Set(ref _hasReported, value); }
+
     public ObservableCollection<ItemViewModel> Rows { get; } = [];
     public ObservableCollection<ItemViewModel> Tiles { get; } = [];
 
@@ -158,6 +229,15 @@ public sealed class SectionViewModel(string id, string title, DisplayOptions opt
 
     public bool HasNotice => _notice.Length > 0;
 
+    /// <summary>The notice of a list with nothing in it. Drawn over its blank rows, where it takes up no extra room.</summary>
+    public string ListNotice
+    {
+        get => _listNotice;
+        private set { Set(ref _listNotice, value); Raise(nameof(HasListNotice)); }
+    }
+
+    public bool HasListNotice => _listNotice.Length > 0;
+
     /// <summary>A notice about a problem is drawn in the warning colour.</summary>
     public bool NoticeIsError { get => _noticeIsError; private set => Set(ref _noticeIsError, value); }
 
@@ -169,10 +249,18 @@ public sealed class SectionViewModel(string id, string title, DisplayOptions opt
     public void Apply(MetricSnapshot snapshot, DateTimeOffset now) => Apply(snapshot, now, isNewReading: true);
 
     /// <summary>Draws the last reading again, after a display option changed. Does not count as a new sample.</summary>
-    public void Reapply(DateTimeOffset now)
+    /// <param name="resized">True if the option changes how big the panel is.</param>
+    public void Reapply(DateTimeOffset now, bool resized)
     {
+        if (resized) Epoch++;
         if (_last is not null) Apply(_last, now, isNewReading: false);
     }
+
+    /// <summary>
+    /// Called when the section's source is rebuilt (after a settings change, for example). The panel keeps
+    /// what it shows until the new source answers, instead of going blank, and takes its size from that answer.
+    /// </summary>
+    public void Renew() => _renewed = true;
 
     public void ResetRanges()
     {
@@ -192,25 +280,9 @@ public sealed class SectionViewModel(string id, string title, DisplayOptions opt
         if (!snapshot.IsError)
         {
             _last = snapshot;
-            var rows = new List<ItemViewModel>();
-            var tiles = new List<ItemViewModel>();
-            var seen = new HashSet<string>();
+            if (ReservedRows > 0) FillList(snapshot.Items, now, isNewReading);
+            else FillReadings(snapshot.Items, now, isNewReading);
 
-            foreach (var item in snapshot.Items)
-            {
-                if (!seen.Add(item.Id)) continue; // two readings with one name: the first wins
-                if (!_items.TryGetValue(item.Id, out var view)) _items[item.Id] = view = new ItemViewModel(item.Id);
-
-                var graphed = options.Graphs && item.Graph && item.Number is not null;
-                var isRow = item.Percent is not null || item.FullWidth || item.Bars is not null || graphed;
-                view.Apply(item, now, options, isRow, graphed, isNewReading);
-                (isRow ? rows : tiles).Add(view);
-            }
-            foreach (var gone in _items.Keys.Where(k => !seen.Contains(k)).ToList()) _items.Remove(gone);
-
-            Sync(Rows, rows);
-            Sync(Tiles, tiles);
-            Raise(nameof(HasTiles));
             Subtitle = snapshot.Subtitle ?? "";
             // Remembered readings carry the time they were really taken, so their age shows honestly.
             if (isNewReading) _lastGood = snapshot.AsOf ?? now;
@@ -218,10 +290,64 @@ public sealed class SectionViewModel(string id, string title, DisplayOptions opt
 
         if (isNewReading)
         {
-            NoticeIsError = snapshot.IsError;
-            Notice = snapshot.Notice ?? "";
+            ShowNotice(snapshot.Notice ?? "", snapshot.IsError);
+            if (_renewed) Epoch++;
+            _renewed = false;
+            HasReported = true;
         }
         Tick(now);
+    }
+
+    private void FillReadings(IReadOnlyList<MetricItem> items, DateTimeOffset now, bool isNewReading)
+    {
+        var rows = new List<ItemViewModel>();
+        var tiles = new List<ItemViewModel>();
+        var seen = new HashSet<string>();
+
+        foreach (var item in items)
+        {
+            if (!seen.Add(item.Id)) continue; // two readings with one name: the first wins
+            if (!_items.TryGetValue(item.Id, out var view)) _items[item.Id] = view = new ItemViewModel(item.Id);
+
+            // A reading keeps its graph while it has no value for the moment, or it would change shape.
+            var graphed = _options.Graphs && item.Graph;
+            var isRow = item.Percent is not null || item.FullWidth || item.Bars is not null || graphed;
+            view.Apply(item, now, _options, isRow, graphed, isNewReading);
+            (isRow ? rows : tiles).Add(view);
+        }
+        foreach (var gone in _items.Keys.Where(k => !seen.Contains(k)).ToList()) _items.Remove(gone);
+
+        Sync(Rows, rows);
+        Sync(Tiles, tiles);
+        Raise(nameof(HasTiles));
+        _listed = items.Count;
+    }
+
+    // A list keeps the same rows throughout, whoever is in them, and blanks the ones it has nothing for.
+    private void FillList(IReadOnlyList<MetricItem> items, DateTimeOffset now, bool isNewReading)
+    {
+        _listed = items.Count;
+        for (var i = 0; i < Math.Max(ReservedRows, items.Count); i++)
+        {
+            var key = "row" + (i + 1);
+            if (!_items.TryGetValue(key, out var view))
+            {
+                _items[key] = view = new ItemViewModel(key);
+                Rows.Add(view);
+            }
+            view.Apply(i < items.Count ? items[i] : BlankRow, now, _options, isRow: true, graphed: false, isNewReading);
+        }
+    }
+
+    // Non-breaking spaces: they draw as nothing but give the line its height.
+    private static readonly MetricItem BlankRow = new("\u00A0") { ValueText = "\u00A0", FullWidth = true };
+
+    private void ShowNotice(string text, bool isError)
+    {
+        var overList = ReservedRows > 0 && _listed == 0;
+        NoticeIsError = isError;
+        ListNotice = overList ? text : "";
+        Notice = overList ? "" : text;
     }
 
     // Leaves the collection alone when nothing moved, so the widget does not flicker on every refresh.
@@ -305,12 +431,15 @@ public sealed class ItemViewModel(string key) : Observable
         // Only for readings that move about. On drive space or today's forecast it would just repeat the value.
         _showRange = options.Ranges && item.Graph;
 
-        if (isNewReading && item.Number is { } number && double.IsFinite(number))
+        if (isNewReading)
         {
-            _samples.Enqueue((now, number));
+            if (item.Number is { } number && double.IsFinite(number))
+            {
+                _samples.Enqueue((now, number));
+                _lowest = Math.Min(_lowest, number);
+                _highest = Math.Max(_highest, number);
+            }
             while (_samples.Count > 0 && now - _samples.Peek().At > HistoryWindow) _samples.Dequeue();
-            _lowest = Math.Min(_lowest, number);
-            _highest = Math.Max(_highest, number);
         }
 
         Label = item.Label;

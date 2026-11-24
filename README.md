@@ -14,14 +14,16 @@ Each block is a section. Profiles decide which sections appear and in what order
 | FPS | Now, frame time, average and 1% low for the app in front | Windows frame events: Direct3D 9 to 12, OpenGL, Vulkan |
 | GPU | Load, VRAM, and on NVIDIA cards temperature, power, fan and clock | NVIDIA driver, or Windows counters for AMD and Intel |
 | GPU by app | Video memory and load of the five heaviest programs | Windows counters |
-| CPU | Load, a bar per thread, clock speed, plus temperature and power if a monitoring tool is running | Windows counters, HWiNFO or MSI Afterburner |
+| CPU | Load, a bar per thread, clock speed, power, plus temperature if a monitoring tool is running | Windows counters and energy meter, HWiNFO or MSI Afterburner |
 | CPU by app | The five programs using the most processor | Windows counters |
+| Power | Watts drawn by the CPU and the graphics card, an estimate for the whole PC, and optionally the share of your power supply in use and the cost per hour | Windows energy meter, NVIDIA driver, monitoring tools |
 | Memory | RAM in use, free, committed | Windows |
 | Memory by app | The five programs using the most memory | Windows counters |
 | Disk activity | Active time of the busiest disk, read and write speed | Windows counters |
 | I/O by app | The five programs reading and writing the most (files, network and devices together) | Windows counters |
 | Drive space | Free space per fixed drive | Windows |
-| Network | Download and upload, split into web and LAN when run as administrator | Windows counters and network events |
+| Network | Download and upload, and how much of each is web (internet) and how much LAN (your local network) | Windows counters and socket events |
+| Network by app | The five programs sending and receiving the most, with the speed each way averaged over 5 seconds | Windows socket events |
 | Ping | Latency, average, jitter and packet loss to a host you choose | One ping per refresh |
 | Extra sensors | Any readings you pick from HWiNFO or MSI Afterburner: fans, voltages, drive temperatures | That tool's shared readings |
 | Battery | Charge, power source, time left. Only on PCs that have one. | Windows |
@@ -77,9 +79,27 @@ Until you drag one, Glance arranges the panels itself into the number of columns
 
 Dragging anywhere else on the widget, such as its title line or the gaps between panels, moves the whole widget.
 
+Panels keep their size while the widget is on screen. The lists of busiest programs always have room for five, with blank lines when fewer are busy, and a reading with no value for the moment shows a dash. A panel that has to grow (a message appearing, for example) does so once, and gives the space back when the widget is next hidden.
+
 ### Colours
 
-Settings, Widget, Colours switches between eight colour schemes: Midnight, Graphite, Ocean, Forest, Ember, Violet, Light and High contrast. A scheme is one line in [Theme.cs](Theme.cs), so adding your own is easy.
+Settings, Widget, Colours switches between nine colour schemes: Midnight, Graphite, Ocean, Forest, Ember, Violet, Light, High contrast and OLED black. A scheme is one line in [Theme.cs](Theme.cs), so adding your own is easy.
+
+### OLED mode
+
+An OLED pixel dims a little with every hour it is lit, so anything that sits still for long enough (a label, a border, the end of a bar) can leave its outline behind. OLED monitors and TVs guard against this by shifting the whole picture by a pixel now and then. OLED mode, in Settings, Widget, does the same for the widget, which matters if you leave it or the compact strip on screen for hours.
+
+- **Each move is one pixel**, left, right, up or down, so it is not seen happening.
+- **How often:** every minute unless you choose every 30 seconds or every 3 minutes. Burn-in builds up over hundreds of hours, so what protects the screen is every position getting an equal share of the time in the long run, not speed. For comparison, Dell says its Alienware OLED monitors move the whole picture by one pixel roughly every three minutes ([Dell's note on pixel shift](https://www.dell.com/support/kbdoc/en-us/000197755/Alienware-34-Curved-Oled-Monitor-Aw3423dw-Pixel-Shift-Pixel-Orbiter)), and MSI's offer slow, normal and fast settings ([MSI on OLED Care](https://www.msi.com/blog/how-msi-oled-care-prevents-oled-from-burn-in)). The widget is small and often on screen briefly, so it goes a little faster.
+- **How far:** 8 pixels across and down unless you choose 4 or 12. The widget's thinnest details are one or two pixels wide and its bars a few pixels tall, so that is enough for no pixel to be lit all the time by a stroke or an edge. More would only make the movement visible.
+- **Where:** a widget pinned to a corner or edge only strays inwards, so it never slides off screen. One you placed by hand strays evenly around that spot, and dragging it sets a new spot.
+- **Evenly:** the path snakes through every position in its box and back, so each gets the same share. Where it is on the path comes from the clock, so hiding and showing the widget, or restarting Glance, carries on rather than starting again from the same spot.
+
+Moving protects fine detail. It cannot protect the middle of a large solid shape, which stays lit wherever the widget goes ([Rtings found the same](https://www.rtings.com/tv/learn/permanent-image-retention-burn-in-lcd-oled) for a large logo on a TV). The colours "OLED black" help there: black is a pixel switched off, which does not wear at all, and the text is kept below full brightness. Neither replaces the monitor's own protection. Leave that switched on.
+
+### Power
+
+The Power section adds up what can be measured: the CPU (from the energy meter built into Windows, or a monitoring tool) and the graphics card (from the NVIDIA driver, or a monitoring tool). Nothing in a desktop PC measures the rest, so "Whole PC" is an estimate: the measured watts, plus an allowance for the motherboard, memory, drives and fans, divided by the power supply's efficiency to give what is drawn at the wall. The allowance (50 W) and efficiency (90%) can be changed in Settings, Data. Give your power supply's size there to see how much of it is in use, and your electricity price to see the cost per hour. A laptop running on battery shows the drain on the battery instead, which is the whole machine, measured.
 
 ### Claude usage and its limit
 
@@ -124,7 +144,7 @@ Glance records every frame time of the app in front, and once a second every har
 
 ## Settings
 
-Everything in the settings window applies immediately. The tabs are Widget (colours, position, columns, size, opacity, graphs), Shortcuts (the four shortcuts and starting with Windows), Sections (profiles, which sections, their order), Tray and strip, and Data (update rates, monitoring tools, extra sensors, ping host, weather town).
+Everything in the settings window applies immediately. The tabs are Widget (colours, position, columns, size, opacity, graphs, OLED mode), Shortcuts (the four shortcuts and starting with Windows), Sections (profiles, which sections, their order), Tray and strip, and Data (update rates, monitoring tools, extra sensors, power figures, ping host, weather town).
 
 Settings are kept in `%APPDATA%\Glance\config.json`. Two options only exist there: `claude.show` (which limits to list, in order, with `*` wildcards, for example `["session", "weekly_fable"]`) and `claude.labels` (rename a limit, for example `{ "weekly_all": "This week" }`). Restart Glance after editing the file by hand.
 
@@ -133,11 +153,16 @@ Settings are kept in `%APPDATA%\Glance\config.json`. Two options only exist ther
 Most sections work for any user on any PC. A few depend on the machine:
 
 - **FPS** needs permission to read Windows performance events: an administrator, or an account in the Performance Log Users group. If the account lacks it, the FPS section says so and Settings offers a button that adds the account to that group (Windows asks for approval, then sign out and back in).
-- **Web and LAN split** in the Network section needs Glance to be run as administrator, because only administrators may read per-connection network events. Settings, Shortcuts has "Start it as administrator", which sets that up with one approval. Otherwise the section shows total download and upload.
+- **Web and LAN split, and Network by app** need the same permission as FPS, and nothing more: they do not need Glance to be run as administrator. Without the permission the Network section shows total download and upload. Three things to know about these figures:
+  - They count what programs send and receive through their own connections. Traffic that Windows carries itself, of which file sharing between PCs is the main example, appears in the totals but not in the split or against a program.
+  - A connection that was already open when the section started does not say where it leads, so its traffic is put down as web or LAN according to where most of that program's connections go.
+  - Traffic between programs on this PC itself is left out.
+- **Starting as administrator** was an option in versions 0.3 and 0.4, for the web and LAN split. It is no longer needed. If you switched it on, Settings, Shortcuts shows a button that puts Glance back to a normal start.
+- **CPU power** comes from the energy meter Windows provides for most recent Intel and AMD processors. Where there is none, it comes from a monitoring tool, as below.
 - **GPU temperature, power, fan and clock** come from the NVIDIA driver. On AMD and Intel graphics the section shows load and VRAM.
-- **CPU temperature and power** cannot be read by Windows without a hardware driver, so Glance borrows them from a monitoring tool if one is running:
+- **CPU temperature** cannot be read by Windows without a hardware driver, so Glance borrows it from a monitoring tool if one is running:
   - HWiNFO, with Shared Memory Support switched on in its settings.
-  - MSI Afterburner, with CPU temperature and CPU power ticked on its Monitoring tab.
+  - MSI Afterburner, with CPU temperature (and CPU power, if Windows has no energy meter for your processor) ticked on its Monitoring tab.
   - CPU-Z is not supported: it has no interface other programs can read.
 - **The overlay itself** cannot draw over a game in exclusive full screen. Borderless or windowed full screen works.
 
@@ -157,6 +182,7 @@ Implement `IMetricProvider` (see [Core/Metrics.cs](Core/Metrics.cs)) and registe
 - Give it a `Percent` and it is drawn as a row with a bar. Leave that out and it becomes a compact tile, two to a line.
 - Give it a `Key`, a `Number` and a `Unit` and it can be put in the tray icon and the compact strip, and is logged by benchmarks.
 - Set `Graph` and it gets a history graph and a lowest and highest range when those are switched on.
+- Keep the same readings from one fetch to the next, with `Format.Missing` as the text of one that has no value, so the panel does not change size. If the section is a list whose length varies, implement `ReservedRows`.
 
 ```csharp
 public sealed class FanProvider : IMetricProvider
@@ -187,9 +213,11 @@ public sealed class FanProvider : IMetricProvider
 - `--snapshot <file.png>` and `--snapshot-settings <file.png> --tab <n>`: render the widget or a settings tab to an image and exit. `--seconds <n>` sets how long to gather readings first.
 - `--probe <file.txt> --seconds <n>`: write what every section of the profile in use reads on this PC to a text file, with no window. Useful when a section misbehaves on someone else's machine.
 - `--probe-events <file.txt> --seconds <n>`: count graphics events per program, for when a game's frame rate is not being picked up.
+- `--probe-etw <file.txt> --seconds <n> --providers "name=GUID[:keywords];..." [--pid <n>]`: list the events any Windows event provider logs, with samples of their raw contents for one process. This is how the layout of the socket events behind the Network sections was worked out: send a known amount of data from a known process and find it in the events. `--key-bytes`, `--key-offset` and `--sum-offset` group that process's events by part of their contents and add up a field.
 - `--benchmark --seconds <n>`: record a benchmark of that length and exit.
 - `--drag "memory:350,0;disk:1200,50"`: move panels as if dragged by their handles to those points (measured within the area the panels sit in), logging what each move did. This is how panel dragging is tested without a mouse.
+- `--watch-layout <file.txt> --seconds <n>`: log every change in the size or place of any panel, then exit. With `--show`, this is how to check that panels stay steady.
 - `GLANCE_NO_CLAUDE`: set it and Glance never looks at the Claude Code sign-in, whatever the settings say. Use it for any test run.
-- `GLANCE_HOME`: environment variable that points Glance at a different settings folder. A copy started this way is a separate instance, so it can run next to your normal one. Benchmarks then go to `benchmarks` inside that folder.
+- `GLANCE_HOME`: environment variable that points Glance at a different settings folder. A copy started this way is a separate instance with its own event sessions, so it can run next to your normal one without disturbing it. Benchmarks then go to `benchmarks` inside that folder.
 - `GLANCE_NO_NVML`: set it to test the vendor-neutral GPU path on an NVIDIA machine.
 - `tools\make-icon.ps1` redraws `Glance.ico`.

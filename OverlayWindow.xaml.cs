@@ -26,10 +26,18 @@ public partial class OverlayWindow : Window
     private const int HotKeyBase = 0x4740;
 
     private readonly DispatcherTimer _topmostTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly DispatcherTimer _shiftTimer = new();
     private AppConfig _config;
     private IntPtr _hwnd;
     private bool _placed;
     private bool _dragging;
+
+    // Where the widget belongs (its top-left corner in screen pixels, and what it is pinned to), and the few
+    // pixels OLED mode has it away from there at the moment.
+    private (int X, int Y) _home;
+    private string _homeAnchor = Anchors.TopRight;
+    private bool _homeKnown;
+    private (int X, int Y) _shift;
     private Native.POINT _dragCursor;
     private Native.RECT _dragWindow;
 
@@ -53,6 +61,7 @@ public partial class OverlayWindow : Window
         Themes.Apply(Resources, Themes.Find(config.Theme));
         Zoom.ScaleX = Zoom.ScaleY = config.Scale;
         _topmostTimer.Tick += (_, _) => AssertTopmost();
+        _shiftTimer.Tick += (_, _) => StepShift();
 
         // An anchored widget stays pinned to its corner as sections come and go.
         SizeChanged += (_, _) =>
@@ -85,6 +94,7 @@ public partial class OverlayWindow : Window
 
         FitToScreen();
         Place();
+        RunShiftTimer();
         BeginAnimation(OpacityProperty, null);
         Opacity = _config.Opacity;
     }
@@ -108,11 +118,13 @@ public partial class OverlayWindow : Window
         Opacity = 0;
         FitToScreen();
         Show();
-        // Re-home the widget if this is the first show or its monitor has been unplugged since.
-        if (!_placed || _config.Anchor != Anchors.Custom || !IsOnAMonitor()) Place();
+        // Re-home the widget if this is the first show or its monitor has been unplugged since. In OLED mode it
+        // is placed every time, because where it should sit has moved on while it was hidden.
+        if (!_placed || _config.Anchor != Anchors.Custom || _config.OledMode || !IsOnAMonitor()) Place();
         AssertTopmost();
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, _config.Opacity, TimeSpan.FromMilliseconds(140)));
         _topmostTimer.Start();
+        RunShiftTimer();
     }
 
     public void HideOverlay()
@@ -120,6 +132,7 @@ public partial class OverlayWindow : Window
         if (!IsVisible) return;
 
         _topmostTimer.Stop();
+        _shiftTimer.Stop();
         BeginAnimation(OpacityProperty, null);
         Hide();
     }
@@ -127,6 +140,7 @@ public partial class OverlayWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _topmostTimer.Stop();
+        _shiftTimer.Stop();
         for (var slot = 0; slot < HotKeySlots; slot++) Native.UnregisterHotKey(_hwnd, HotKeyBase + slot);
         base.OnClosed(e);
     }
@@ -157,6 +171,43 @@ public partial class OverlayWindow : Window
     private void MoveTo(int x, int y) =>
         Native.SetWindowPos(_hwnd, IntPtr.Zero, x, y, 0, 0,
             Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+
+    // ---- OLED mode: see PixelShift ----
+
+    private (int X, int Y) ShiftNow(string anchor) =>
+        _config.OledMode ? PixelShift.Offset(DateTime.UtcNow, _config.OledMoveSeconds, _config.OledTravel, anchor) : (0, 0);
+
+    // Puts the widget where it belongs, plus whatever OLED mode has it strayed by at this moment.
+    private void MoveHome(int x, int y, string anchor)
+    {
+        _home = (x, y);
+        _homeAnchor = anchor;
+        _homeKnown = true;
+        _shift = ShiftNow(anchor);
+        if (!Native.GetWindowRect(_hwnd, out var rect) || rect.Left != x + _shift.X || rect.Top != y + _shift.Y)
+            MoveTo(x + _shift.X, y + _shift.Y);
+    }
+
+    private void RunShiftTimer()
+    {
+        _shiftTimer.Stop();
+        if (!_config.OledMode || !IsVisible) return;
+
+        // Looked at a few times per step, so each move lands close to when it is due without a precise timer.
+        _shiftTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(_config.OledMoveSeconds / 4.0, 0.25, 5));
+        _shiftTimer.Start();
+    }
+
+    // Moves the widget on to its next position when the time has come: one pixel, in one direction.
+    private void StepShift()
+    {
+        if (!IsVisible || !_homeKnown || _dragging || _held is not null) return;
+
+        var shift = ShiftNow(_homeAnchor);
+        if (shift == _shift) return;
+        _shift = shift;
+        MoveTo(_home.X + shift.X, _home.Y + shift.Y);
+    }
 
     // Tells the layout how tall a column may be on this screen, so a long list of sections wraps into more
     // columns instead of running off the bottom. Matters most on smaller displays.
@@ -192,7 +243,7 @@ public partial class OverlayWindow : Window
             // Only trust the saved spot if it is still on a connected monitor.
             if (_config.X is { } x && _config.Y is { } y && IsOnAMonitor(x, y, width))
             {
-                MoveTo(x, y);
+                MoveHome(x, y, Anchors.Custom);
                 return;
             }
             anchor = Anchors.TopRight;
@@ -211,7 +262,7 @@ public partial class OverlayWindow : Window
                  : anchor.EndsWith("right", StringComparison.Ordinal) ? work.Right - width
                  : work.Left + (work.Right - work.Left - width) / 2;
         var top = anchor.StartsWith("bottom", StringComparison.Ordinal) ? work.Bottom - height : work.Top;
-        if (left != rect.Left || top != rect.Top) MoveTo(left, top);
+        MoveHome(left, top, anchor);
     }
 
     private bool IsOnAMonitor() =>
@@ -282,7 +333,15 @@ public partial class OverlayWindow : Window
         _dragging = false;
         ReleaseMouseCapture();
         if (Native.GetWindowRect(_hwnd, out var rect) && (rect.Left != _dragWindow.Left || rect.Top != _dragWindow.Top))
-            Moved?.Invoke(rect.Left, rect.Top);
+        {
+            // The widget now belongs where it was dropped. In OLED mode it strays around that spot, and the
+            // spot remembered is the one that leaves it exactly here for now, so letting go never makes it jump.
+            _shift = ShiftNow(Anchors.Custom);
+            _home = (rect.Left - _shift.X, rect.Top - _shift.Y);
+            _homeAnchor = Anchors.Custom;
+            _homeKnown = true;
+            Moved?.Invoke(_home.X, _home.Y);
+        }
     }
 
     protected override void OnLostMouseCapture(MouseEventArgs e)
@@ -372,6 +431,16 @@ public partial class OverlayWindow : Window
                 foreach (var deeper in Descendants(child)) yield return deeper;
             }
         }
+    }
+
+    /// <summary>Where each panel is and how big, for the "--watch-layout" development switch.</summary>
+    internal IReadOnlyList<(string Id, Rect Bounds)> PanelBounds()
+    {
+        if (SectionsPanel() is not { } panel) return [];
+        return panel.Arranged.SelectMany(column => column).OfType<FrameworkElement>()
+            .Where(child => child.DataContext is SectionViewModel)
+            .Select(child => (((SectionViewModel)child.DataContext).Id, new Rect(child.TranslatePoint(new Point(0, 0), panel), child.RenderSize)))
+            .ToList();
     }
 
     // The panel that lays the sections out lives inside the list's template, so it has to be looked for.
